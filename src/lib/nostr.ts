@@ -126,13 +126,13 @@ export function shortenKey(pubkey: string): string {
 // ── NIP-07 Browser Extension ──
 
 export async function getPublicKeyFromExtension(): Promise<string | null> {
-  const ext = (window as Record<string, unknown>).nostr as { getPublicKey: () => Promise<string> } | undefined;
+  const ext = (window as unknown as Record<string, unknown>).nostr as { getPublicKey: () => Promise<string> } | undefined;
   if (!ext) return null;
   try { return await ext.getPublicKey(); } catch { return null; }
 }
 
 export async function signEventWithExtension(event: EventTemplate): Promise<Event | null> {
-  const ext = (window as Record<string, unknown>).nostr as { signEvent: (event: EventTemplate) => Promise<Event> } | undefined;
+  const ext = (window as unknown as Record<string, unknown>).nostr as { signEvent: (event: EventTemplate) => Promise<Event> } | undefined;
   if (!ext) return null;
   try { return await ext.signEvent(event); } catch { return null; }
 }

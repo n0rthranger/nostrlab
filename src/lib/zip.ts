@@ -135,7 +135,7 @@ function sanitizeZipPath(path: string): string | null {
 
 export function downloadZipFromEntries(repoName: string, entries: ZipEntry[]): void {
   const zipData = buildZip(entries);
-  const blob = new Blob([zipData.buffer], { type: "application/zip" });
+  const blob = new Blob([new Uint8Array(zipData)], { type: "application/zip" });
   const url = URL.createObjectURL(blob);
 
   const a = document.createElement("a");
@@ -157,7 +157,7 @@ export function downloadRepoZip(repoName: string, files: FileBlobEvent[]): void 
   }
 
   const zipData = buildZip(entries);
-  const blob = new Blob([zipData.buffer], { type: "application/zip" });
+  const blob = new Blob([new Uint8Array(zipData)], { type: "application/zip" });
   const url = URL.createObjectURL(blob);
 
   const a = document.createElement("a");
