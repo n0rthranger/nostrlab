@@ -47,39 +47,45 @@ export default function BountyPage() {
     let cancelled = false;
 
     pool.querySync(DEFAULT_RELAYS, { kinds: [BOUNTY], "#a": [addr] }).then(async (events) => {
-      if (cancelled) return;
-      const parsed: BountyEvent[] = events
-        .filter((e) => e.tags.some((t) => t[0] === "amount" && t[1] && parseInt(t[1], 10) > 0))
-        .map((e) => ({
-          id: e.id,
-          pubkey: e.pubkey,
-          content: e.content,
-          repoAddress: e.tags.find((t) => t[0] === "a")?.[1] ?? "",
-          issueId: e.tags.find((t) => t[0] === "e")?.[1],
-          amountSats: parseInt(e.tags.find((t) => t[0] === "amount")?.[1] ?? "0", 10),
-          status: (e.tags.find((t) => t[0] === "status")?.[1] as BountyEvent["status"]) ?? "open",
-          createdAt: e.created_at,
-        })).sort((a, b) => b.createdAt - a.createdAt);
+      try {
+        if (cancelled) return;
+        const parsed: BountyEvent[] = events
+          .filter((e) => e.tags.some((t) => t[0] === "amount" && t[1] && parseInt(t[1], 10) > 0))
+          .map((e) => ({
+            id: e.id,
+            pubkey: e.pubkey,
+            content: e.content,
+            repoAddress: e.tags.find((t) => t[0] === "a")?.[1] ?? "",
+            issueId: e.tags.find((t) => t[0] === "e")?.[1],
+            amountSats: parseInt(e.tags.find((t) => t[0] === "amount")?.[1] ?? "0", 10),
+            status: (e.tags.find((t) => t[0] === "status")?.[1] as BountyEvent["status"]) ?? "open",
+            createdAt: e.created_at,
+          })).sort((a, b) => b.createdAt - a.createdAt);
 
-      // Fetch status updates (claims/payments) for all bounties
-      const bountyIds = parsed.map((b) => b.id);
-      const updates = await fetchBountyUpdates(bountyIds);
-      for (const b of parsed) {
-        const update = updates.get(b.id);
-        if (update) {
-          b.status = update.status;
-          b.claimedBy = update.claimedBy;
+        // Fetch status updates (claims/payments) for all bounties
+        try {
+          const bountyIds = parsed.map((b) => b.id);
+          const updates = await fetchBountyUpdates(bountyIds);
+          for (const b of parsed) {
+            const update = updates.get(b.id);
+            if (update) {
+              b.status = update.status;
+              b.claimedBy = update.claimedBy;
+            }
+          }
+        } catch { /* skip status updates on failure */ }
+
+        setBounties(parsed);
+        const allPubkeys = [...new Set([
+          ...parsed.map((b) => b.pubkey),
+          ...parsed.filter((b) => b.claimedBy).map((b) => b.claimedBy!),
+        ])];
+        if (allPubkeys.length > 0) {
+          const profs = await fetchProfiles(allPubkeys);
+          if (!cancelled) setProfiles(profs);
         }
-      }
-
-      setBounties(parsed);
-      const allPubkeys = [...new Set([
-        ...parsed.map((b) => b.pubkey),
-        ...parsed.filter((b) => b.claimedBy).map((b) => b.claimedBy!),
-      ])];
-      const profs = await fetchProfiles(allPubkeys);
-      if (!cancelled) setProfiles(profs);
-      setLoading(false);
+      } catch { /* ensure loading clears */ }
+      if (!cancelled) setLoading(false);
     });
 
     return () => { cancelled = true; };

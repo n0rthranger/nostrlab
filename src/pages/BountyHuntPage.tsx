@@ -57,79 +57,83 @@ export default function BountyHuntPage() {
     let cancelled = false;
 
     (async () => {
-      const events = await pool.querySync(DEFAULT_RELAYS, { kinds: [BOUNTY], limit: 200 });
-      if (cancelled) return;
+      try {
+        const events = await pool.querySync(DEFAULT_RELAYS, { kinds: [BOUNTY], limit: 200 });
+        if (cancelled) return;
 
-      const parsed: EnrichedBounty[] = events
-        .filter((e) => {
-          const hasAmount = e.tags.some((t) => t[0] === "amount" && t[1] && parseInt(t[1], 10) > 0);
-          const hasRepoAddr = e.tags.some((t) => t[0] === "a" && t[1]?.startsWith("30617:"));
-          return hasAmount && hasRepoAddr;
-        })
-        .map((e) => {
-          const repoAddr = e.tags.find((t) => t[0] === "a")?.[1] ?? "";
-          const parts = repoAddr.split(":");
-          return {
-            id: e.id,
-            pubkey: e.pubkey,
-            content: e.content,
-            repoAddress: repoAddr,
-            repoName: "",
-            repoIdentifier: parts[2] ?? "",
-            repoPubkey: parts[1] ?? "",
-            issueId: e.tags.find((t) => t[0] === "e")?.[1],
-            amountSats: parseInt(e.tags.find((t) => t[0] === "amount")?.[1] ?? "0", 10),
-            status: (e.tags.find((t) => t[0] === "status")?.[1] as BountyEvent["status"]) ?? "open",
-            createdAt: e.created_at,
-          };
-        });
+        const parsed: EnrichedBounty[] = events
+          .filter((e) => {
+            const hasAmount = e.tags.some((t) => t[0] === "amount" && t[1] && parseInt(t[1], 10) > 0);
+            const hasRepoAddr = e.tags.some((t) => t[0] === "a" && t[1]?.startsWith("30617:"));
+            return hasAmount && hasRepoAddr;
+          })
+          .map((e) => {
+            const repoAddr = e.tags.find((t) => t[0] === "a")?.[1] ?? "";
+            const parts = repoAddr.split(":");
+            return {
+              id: e.id,
+              pubkey: e.pubkey,
+              content: e.content,
+              repoAddress: repoAddr,
+              repoName: "",
+              repoIdentifier: parts[2] ?? "",
+              repoPubkey: parts[1] ?? "",
+              issueId: e.tags.find((t) => t[0] === "e")?.[1],
+              amountSats: parseInt(e.tags.find((t) => t[0] === "amount")?.[1] ?? "0", 10),
+              status: (e.tags.find((t) => t[0] === "status")?.[1] as BountyEvent["status"]) ?? "open",
+              createdAt: e.created_at,
+            };
+          });
 
-      // Fetch status updates (claims/payments)
-      const bountyIds = parsed.map((b) => b.id);
-      const updates = await fetchBountyUpdates(bountyIds);
-      for (const b of parsed) {
-        const update = updates.get(b.id);
-        if (update) {
-          b.status = update.status;
-          b.claimedBy = update.claimedBy;
-        }
-      }
-
-      // Fetch repo names
-      const repoAddrs = [...new Set(parsed.map((b) => b.repoAddress).filter(Boolean))];
-      const repoNames = new Map<string, string>();
-
-      if (repoAddrs.length > 0) {
-        const fetchPromises = repoAddrs.map(async (addr) => {
-          const [, pubkey, identifier] = addr.split(":");
-          if (!pubkey || !identifier) return;
-          try {
-            const events = await pool.querySync(DEFAULT_RELAYS, { kinds: [REPO_ANNOUNCEMENT], authors: [pubkey], "#d": [identifier], limit: 1 });
-            for (const re of events) {
-              const name = re.tags.find((t) => t[0] === "name")?.[1] ?? re.tags.find((t) => t[0] === "d")?.[1] ?? "";
-              repoNames.set(addr, name);
+        // Fetch status updates (claims/payments)
+        try {
+          const bountyIds = parsed.map((b) => b.id);
+          const updates = await fetchBountyUpdates(bountyIds);
+          for (const b of parsed) {
+            const update = updates.get(b.id);
+            if (update) {
+              b.status = update.status;
+              b.claimedBy = update.claimedBy;
             }
-          } catch { /* skip */ }
-        });
-        await Promise.allSettled(fetchPromises);
-      }
+          }
+        } catch { /* skip status updates on failure */ }
 
-      for (const b of parsed) {
-        b.repoName = repoNames.get(b.repoAddress) || b.repoIdentifier;
-      }
+        // Fetch repo names
+        const repoAddrs = [...new Set(parsed.map((b) => b.repoAddress).filter(Boolean))];
+        const repoNames = new Map<string, string>();
 
-      parsed.sort((a, b) => b.amountSats - a.amountSats);
-      setBounties(parsed);
+        if (repoAddrs.length > 0) {
+          const fetchPromises = repoAddrs.map(async (addr) => {
+            const [, pubkey, identifier] = addr.split(":");
+            if (!pubkey || !identifier) return;
+            try {
+              const events = await pool.querySync(DEFAULT_RELAYS, { kinds: [REPO_ANNOUNCEMENT], authors: [pubkey], "#d": [identifier], limit: 1 });
+              for (const re of events) {
+                const name = re.tags.find((t) => t[0] === "name")?.[1] ?? re.tags.find((t) => t[0] === "d")?.[1] ?? "";
+                repoNames.set(addr, name);
+              }
+            } catch { /* skip */ }
+          });
+          await Promise.allSettled(fetchPromises);
+        }
 
-      const allPubkeys = [...new Set([
-        ...parsed.map((b) => b.pubkey),
-        ...parsed.filter((b) => b.claimedBy).map((b) => b.claimedBy!),
-      ])];
-      if (allPubkeys.length > 0) {
-        const profs = await fetchProfiles(allPubkeys);
-        if (!cancelled) setProfiles(profs);
-      }
-      setLoading(false);
+        for (const b of parsed) {
+          b.repoName = repoNames.get(b.repoAddress) || b.repoIdentifier;
+        }
+
+        parsed.sort((a, b) => b.amountSats - a.amountSats);
+        setBounties(parsed);
+
+        const allPubkeys = [...new Set([
+          ...parsed.map((b) => b.pubkey),
+          ...parsed.filter((b) => b.claimedBy).map((b) => b.claimedBy!),
+        ])];
+        if (allPubkeys.length > 0) {
+          const profs = await fetchProfiles(allPubkeys);
+          if (!cancelled) setProfiles(profs);
+        }
+      } catch { /* ensure loading clears */ }
+      if (!cancelled) setLoading(false);
     })();
 
     return () => { cancelled = true; };
