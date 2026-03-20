@@ -1,4 +1,4 @@
-# nostr-git
+# NostrLab
 
 A decentralized GitHub alternative built on the [Nostr protocol](https://nostr.com). Create repositories, file issues, submit patches, review pull requests, and collaborate on code -- all without centralized servers. Data lives on Nostr relays and is signed with your cryptographic identity.
 

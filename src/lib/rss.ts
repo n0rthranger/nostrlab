@@ -37,7 +37,7 @@ export function generateRepoRSS(
     <link>${channelLink}</link>
     <description>${channelDescription}</description>
     <language>en</language>
-    <generator>nostr-git</generator>
+    <generator>NostrLab</generator>
 ${itemsXml}
   </channel>
 </rss>`;
