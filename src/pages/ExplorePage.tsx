@@ -145,7 +145,7 @@ export default function ExplorePage() {
                 <div className="w-10 h-10 rounded-lg bg-purple/10 border border-purple/20 flex items-center justify-center mb-4">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-purple"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
                 </div>
-                <h3 className="font-semibold text-sm mb-2 glitch-text">Git Native</h3>
+                <h3 className="font-semibold text-sm mb-2 glitch-text">Git Compatible</h3>
                 <p className="text-xs text-text-secondary leading-relaxed">Submit patches, open issues, review PRs — all using standard git workflows over Nostr events.</p>
                 <div className="mt-4 font-mono text-[10px] text-cyan opacity-30">// NIP-34 protocol</div>
               </div>
