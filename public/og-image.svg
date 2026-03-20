@@ -1,0 +1,6 @@
+<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="630" fill="#0d1117"/>
+  <text x="600" y="280" text-anchor="middle" font-family="monospace" font-size="72" font-weight="bold" fill="#00ff41">NostrLab</text>
+  <text x="600" y="360" text-anchor="middle" font-family="monospace" font-size="28" fill="#8b949e">Decentralized Code Collaboration</text>
+  <text x="600" y="420" text-anchor="middle" font-family="monospace" font-size="20" fill="#58a6ff">Built on Nostr</text>
+</svg>
