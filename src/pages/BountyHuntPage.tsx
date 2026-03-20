@@ -3,12 +3,17 @@ import { Link } from "react-router-dom";
 import {
   pool,
   fetchProfiles,
+  fetchRepos,
   shortenKey,
   timeAgo,
+  repoAddress,
+  signWith,
   DEFAULT_RELAYS,
 } from "../lib/nostr";
 import { BOUNTY, REPO_ANNOUNCEMENT } from "../types/nostr";
-import type { BountyEvent, UserProfile } from "../types/nostr";
+import type { BountyEvent, UserProfile, RepoAnnouncement } from "../types/nostr";
+import { useAuth } from "../hooks/useAuth";
+import { useToast } from "../components/Toast";
 
 interface EnrichedBounty extends BountyEvent {
   repoName: string;
@@ -17,11 +22,22 @@ interface EnrichedBounty extends BountyEvent {
 }
 
 export default function BountyHuntPage() {
+  const { pubkey: authPubkey, signer } = useAuth();
+  const { toast } = useToast();
   const [bounties, setBounties] = useState<EnrichedBounty[]>([]);
   const [profiles, setProfiles] = useState<Map<string, UserProfile>>(new Map());
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<"open" | "claimed" | "paid" | "all">("open");
   const [sortBy, setSortBy] = useState<"recent" | "amount">("amount");
+
+  // Create bounty form state
+  const [showForm, setShowForm] = useState(false);
+  const [userRepos, setUserRepos] = useState<RepoAnnouncement[]>([]);
+  const [selectedRepo, setSelectedRepo] = useState("");
+  const [newAmount, setNewAmount] = useState("");
+  const [newContent, setNewContent] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [loadingRepos, setLoadingRepos] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,7 +77,6 @@ export default function BountyHuntPage() {
       const repoNames = new Map<string, string>();
 
       if (repoAddrs.length > 0) {
-        // Fetch repo names by querying each repo individually
         const fetchPromises = repoAddrs.map(async (addr) => {
           const [, pubkey, identifier] = addr.split(":");
           if (!pubkey || !identifier) return;
@@ -76,7 +91,6 @@ export default function BountyHuntPage() {
         await Promise.allSettled(fetchPromises);
       }
 
-      // Enrich bounties with repo names
       for (const b of parsed) {
         b.repoName = repoNames.get(b.repoAddress) || b.repoIdentifier;
       }
@@ -84,7 +98,6 @@ export default function BountyHuntPage() {
       parsed.sort((a, b) => b.amountSats - a.amountSats);
       setBounties(parsed);
 
-      // Fetch profiles
       const pubkeys = [...new Set(parsed.map((b) => b.pubkey))];
       if (pubkeys.length > 0) {
         const profs = await fetchProfiles(pubkeys);
@@ -95,6 +108,70 @@ export default function BountyHuntPage() {
 
     return () => { cancelled = true; };
   }, []);
+
+  // Load user's repos when form is opened
+  const handleOpenForm = async () => {
+    setShowForm(true);
+    if (userRepos.length > 0 || !authPubkey) return;
+    setLoadingRepos(true);
+    try {
+      const events = await pool.querySync(DEFAULT_RELAYS, { kinds: [REPO_ANNOUNCEMENT], authors: [authPubkey] });
+      const repos: RepoAnnouncement[] = events
+        .map((e) => {
+          const name = e.tags.find((t) => t[0] === "name")?.[1] ?? e.tags.find((t) => t[0] === "d")?.[1] ?? "";
+          const identifier = e.tags.find((t) => t[0] === "d")?.[1] ?? "";
+          return { id: e.id, pubkey: e.pubkey, identifier, name, description: "", cloneUrls: [], webUrls: [], tags: [], createdAt: e.created_at };
+        })
+        .filter((r) => r.name && r.identifier);
+      setUserRepos(repos);
+      if (repos.length > 0) setSelectedRepo(`${repos[0].pubkey}:${repos[0].identifier}`);
+    } catch { /* ignore */ }
+    setLoadingRepos(false);
+  };
+
+  const handleCreate = async () => {
+    if (!signer || !selectedRepo || !newAmount) return;
+    const [repoPubkey, repoIdentifier] = selectedRepo.split(":");
+    const addr = repoAddress(repoPubkey, repoIdentifier);
+    setCreating(true);
+    try {
+      const event = await signWith(signer, {
+        kind: BOUNTY,
+        content: newContent,
+        tags: [
+          ["a", addr],
+          ["amount", newAmount],
+          ["status", "open"],
+          ["p", repoPubkey],
+        ],
+        created_at: Math.floor(Date.now() / 1000),
+      });
+      await Promise.allSettled(pool.publish(DEFAULT_RELAYS, event));
+      toast("Bounty created!", "success");
+
+      const repo = userRepos.find((r) => r.pubkey === repoPubkey && r.identifier === repoIdentifier);
+      const newBounty: EnrichedBounty = {
+        id: event.id,
+        pubkey: authPubkey!,
+        content: newContent,
+        repoAddress: addr,
+        repoName: repo?.name ?? repoIdentifier,
+        repoIdentifier,
+        repoPubkey,
+        amountSats: parseInt(newAmount) || 0,
+        status: "open",
+        createdAt: event.created_at,
+      };
+      setBounties((prev) => [newBounty, ...prev]);
+      setShowForm(false);
+      setNewAmount("");
+      setNewContent("");
+    } catch (err: unknown) {
+      toast(err instanceof Error ? err.message : "Failed to create bounty", "error");
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const filtered = bounties
     .filter((b) => statusFilter === "all" || b.status === statusFilter)
@@ -118,14 +195,88 @@ export default function BountyHuntPage() {
   return (
     <div className="max-w-4xl mx-auto">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">
-          <span className="text-orange">&#x26A1;</span> Bounty Hunt
-        </h1>
-        <p className="text-text-secondary text-sm">
-          Find open bounties across all repositories. Earn sats by contributing code.
-        </p>
+      <div className="flex items-start justify-between mb-8">
+        <div>
+          <h1 className="text-3xl font-bold mb-2">
+            <span className="text-orange">&#x26A1;</span> Bounty Hunt
+          </h1>
+          <p className="text-text-secondary text-sm">
+            Find open bounties across all repositories. Earn sats by contributing code.
+          </p>
+        </div>
+        {signer && (
+          <button
+            onClick={showForm ? () => setShowForm(false) : handleOpenForm}
+            className="btn btn-primary btn-sm shrink-0"
+          >
+            {showForm ? "Cancel" : "Post Bounty"}
+          </button>
+        )}
       </div>
+
+      {/* Create bounty form */}
+      {showForm && (
+        <div className="Box mb-8">
+          <div className="Box-header py-2 px-4">
+            <h2 className="text-sm font-semibold">Post a bounty</h2>
+          </div>
+          <div className="p-4 space-y-3">
+            <div>
+              <label className="text-xs text-text-muted block mb-1">Repository</label>
+              {loadingRepos ? (
+                <div className="text-sm text-text-muted py-2">Loading your repos...</div>
+              ) : userRepos.length === 0 ? (
+                <div className="text-sm text-text-muted py-2">
+                  You don't have any repositories yet.{" "}
+                  <Link to="/new" className="text-accent hover:underline no-underline">Create one first</Link>
+                </div>
+              ) : (
+                <select
+                  value={selectedRepo}
+                  onChange={(e) => setSelectedRepo(e.target.value)}
+                  className="w-full bg-bg-primary border border-border rounded-lg px-3 py-2 text-sm text-text-primary cursor-pointer focus:outline-none focus:border-accent"
+                >
+                  {userRepos.map((r) => (
+                    <option key={`${r.pubkey}:${r.identifier}`} value={`${r.pubkey}:${r.identifier}`}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <div>
+                <label className="text-xs text-text-muted block mb-1">Amount (sats)</label>
+                <input
+                  type="number"
+                  value={newAmount}
+                  onChange={(e) => setNewAmount(e.target.value)}
+                  placeholder="1000"
+                  min="1"
+                  className="w-32 bg-bg-primary border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="text-xs text-text-muted block mb-1">Description</label>
+                <input
+                  type="text"
+                  value={newContent}
+                  onChange={(e) => setNewContent(e.target.value)}
+                  placeholder="What needs to be done?"
+                  className="w-full bg-bg-primary border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent"
+                />
+              </div>
+            </div>
+            <button
+              onClick={handleCreate}
+              disabled={creating || !newAmount || !selectedRepo || userRepos.length === 0}
+              className="btn btn-primary"
+            >
+              {creating ? "Creating..." : "Post Bounty"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Stats bar */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
@@ -175,9 +326,14 @@ export default function BountyHuntPage() {
           <h3 className="text-lg font-medium text-text-primary mb-1">No bounties found</h3>
           <p className="text-sm text-text-muted">
             {statusFilter === "open"
-              ? "No open bounties right now. Check back later or post one on your repo!"
+              ? "No open bounties right now. Be the first to post one!"
               : "No bounties match your filter."}
           </p>
+          {signer && !showForm && (
+            <button onClick={handleOpenForm} className="btn btn-primary btn-sm mt-4">
+              Post a Bounty
+            </button>
+          )}
         </div>
       ) : (
         <div className="Box neon-border-animated rounded-2xl">
