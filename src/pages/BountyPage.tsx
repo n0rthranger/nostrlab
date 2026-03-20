@@ -33,16 +33,18 @@ export default function BountyPage() {
 
     pool.querySync(DEFAULT_RELAYS, { kinds: [BOUNTY], "#a": [addr] }).then(async (events) => {
       if (cancelled) return;
-      const parsed: BountyEvent[] = events.map((e) => ({
-        id: e.id,
-        pubkey: e.pubkey,
-        content: e.content,
-        repoAddress: e.tags.find((t) => t[0] === "a")?.[1] ?? "",
-        issueId: e.tags.find((t) => t[0] === "e")?.[1],
-        amountSats: parseInt(e.tags.find((t) => t[0] === "amount")?.[1] ?? "0", 10),
-        status: (e.tags.find((t) => t[0] === "status")?.[1] as BountyEvent["status"]) ?? "open",
-        createdAt: e.created_at,
-      })).sort((a, b) => b.createdAt - a.createdAt);
+      const parsed: BountyEvent[] = events
+        .filter((e) => e.tags.some((t) => t[0] === "amount" && t[1] && parseInt(t[1], 10) > 0))
+        .map((e) => ({
+          id: e.id,
+          pubkey: e.pubkey,
+          content: e.content,
+          repoAddress: e.tags.find((t) => t[0] === "a")?.[1] ?? "",
+          issueId: e.tags.find((t) => t[0] === "e")?.[1],
+          amountSats: parseInt(e.tags.find((t) => t[0] === "amount")?.[1] ?? "0", 10),
+          status: (e.tags.find((t) => t[0] === "status")?.[1] as BountyEvent["status"]) ?? "open",
+          createdAt: e.created_at,
+        })).sort((a, b) => b.createdAt - a.createdAt);
 
       setBounties(parsed);
       const pubkeys = [...new Set(parsed.map((b) => b.pubkey))];

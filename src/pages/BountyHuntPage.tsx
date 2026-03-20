@@ -31,23 +31,30 @@ export default function BountyHuntPage() {
       const events = await pool.querySync(DEFAULT_RELAYS, { kinds: [BOUNTY], limit: 200 });
       if (cancelled) return;
 
-      const parsed: EnrichedBounty[] = events.map((e) => {
-        const repoAddr = e.tags.find((t) => t[0] === "a")?.[1] ?? "";
-        const parts = repoAddr.split(":");
-        return {
-          id: e.id,
-          pubkey: e.pubkey,
-          content: e.content,
-          repoAddress: repoAddr,
-          repoName: "",
-          repoIdentifier: parts[2] ?? "",
-          repoPubkey: parts[1] ?? "",
-          issueId: e.tags.find((t) => t[0] === "e")?.[1],
-          amountSats: parseInt(e.tags.find((t) => t[0] === "amount")?.[1] ?? "0", 10),
-          status: (e.tags.find((t) => t[0] === "status")?.[1] as BountyEvent["status"]) ?? "open",
-          createdAt: e.created_at,
-        };
-      });
+      // Filter to only real bounty events: must have "amount" tag and "a" tag with valid repo address
+      const parsed: EnrichedBounty[] = events
+        .filter((e) => {
+          const hasAmount = e.tags.some((t) => t[0] === "amount" && t[1] && parseInt(t[1], 10) > 0);
+          const hasRepoAddr = e.tags.some((t) => t[0] === "a" && t[1]?.startsWith("30617:"));
+          return hasAmount && hasRepoAddr;
+        })
+        .map((e) => {
+          const repoAddr = e.tags.find((t) => t[0] === "a")?.[1] ?? "";
+          const parts = repoAddr.split(":");
+          return {
+            id: e.id,
+            pubkey: e.pubkey,
+            content: e.content,
+            repoAddress: repoAddr,
+            repoName: "",
+            repoIdentifier: parts[2] ?? "",
+            repoPubkey: parts[1] ?? "",
+            issueId: e.tags.find((t) => t[0] === "e")?.[1],
+            amountSats: parseInt(e.tags.find((t) => t[0] === "amount")?.[1] ?? "0", 10),
+            status: (e.tags.find((t) => t[0] === "status")?.[1] as BountyEvent["status"]) ?? "open",
+            createdAt: e.created_at,
+          };
+        });
 
       // Fetch repo names for each unique repo address
       const repoAddrs = [...new Set(parsed.map((b) => b.repoAddress).filter(Boolean))];
