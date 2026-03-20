@@ -4,6 +4,9 @@ import { loadConfig, saveConfig } from "./config.js";
 import { registerReposCommand } from "./commands/repos.js";
 import { registerIssuesCommand } from "./commands/issues.js";
 import { registerPatchCommand } from "./commands/patch.js";
+import { registerBountiesCommand } from "./commands/bounties.js";
+import { registerCloneCommand } from "./commands/clone.js";
+import { registerPublishCommand } from "./commands/publish.js";
 
 const program = new Command();
 
@@ -51,5 +54,8 @@ config
 registerReposCommand(program);
 registerIssuesCommand(program);
 registerPatchCommand(program);
+registerBountiesCommand(program);
+registerCloneCommand(program);
+registerPublishCommand(program);
 
 program.parse();

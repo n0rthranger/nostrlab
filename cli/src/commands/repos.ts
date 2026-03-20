@@ -37,7 +37,7 @@ export function registerReposCommand(program: Command) {
         if (repo.description) console.log(`    ${repo.description}`);
         if (repo.tags.length) console.log(`    tags: ${repo.tags.join(", ")}`);
         if (repo.cloneUrls.length) console.log(`    clone: ${repo.cloneUrls[0]}`);
-        console.log(`    url: https://nostrlab.app/repo/${npub}/${repo.identifier}`);
+        console.log(`    url: https://nostrlab.com/repo/${npub}/${repo.identifier}`);
         console.log();
       }
       console.log(`${events.length} repositories found.`);

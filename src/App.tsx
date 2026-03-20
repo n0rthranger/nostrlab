@@ -36,6 +36,7 @@ const RepoSettingsPage = lazy(() => import("./pages/RepoSettingsPage"));
 const DiscussionsPage = lazy(() => import("./pages/DiscussionsPage"));
 const WikiPage = lazy(() => import("./pages/WikiPage"));
 const BountyPage = lazy(() => import("./pages/BountyPage"));
+const BountyHuntPage = lazy(() => import("./pages/BountyHuntPage"));
 const SearchPage = lazy(() => import("./pages/SearchPage"));
 const TopicPage = lazy(() => import("./pages/TopicPage"));
 const TrendingPage = lazy(() => import("./pages/TrendingPage"));
@@ -101,6 +102,7 @@ export default function App() {
                         <Route path="/messages" element={<MessagesPage />} />
                         <Route path="/messages/:recipientNpub" element={<MessagesPage />} />
                         <Route path="/search" element={<SearchPage />} />
+                        <Route path="/bounties" element={<BountyHuntPage />} />
                         <Route path="/trending" element={<TrendingPage />} />
                         <Route path="/topics" element={<TopicPage />} />
                         <Route path="/topics/:tag" element={<TopicPage />} />

@@ -75,6 +75,9 @@ export default function Layout() {
             <Link to="/snippets" className={`px-3 py-1.5 rounded-lg no-underline hover:no-underline hover:bg-accent/8 nav-link-hacker transition-all ${isActive("/snippets")}`}>
               Snippets
             </Link>
+            <Link to="/bounties" className={`px-3 py-1.5 rounded-lg no-underline hover:no-underline hover:bg-accent/8 nav-link-hacker transition-all ${isActive("/bounties")}`}>
+              Bounties
+            </Link>
           </nav>
 
           {/* Spacer */}
@@ -243,6 +246,9 @@ export default function Layout() {
             </Link>
             <Link to="/snippets" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 rounded-md text-sm text-text-primary no-underline hover:bg-bg-tertiary">
               Snippets
+            </Link>
+            <Link to="/bounties" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 rounded-md text-sm text-text-primary no-underline hover:bg-bg-tertiary">
+              Bounties
             </Link>
             {pubkey && (
               <>

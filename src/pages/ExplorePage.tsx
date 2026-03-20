@@ -9,6 +9,7 @@ import NostrLabLogo from "../components/NostrLabLogo";
 import { useAuth } from "../hooks/useAuth";
 import { useRelays } from "../hooks/useRelays";
 import { useLiveEvents } from "../hooks/useSubscription";
+import OnboardingTips from "../components/OnboardingTips";
 
 export default function ExplorePage() {
   const { pubkey } = useAuth();
@@ -153,6 +154,9 @@ export default function ExplorePage() {
           </div>
         </div>
       )}
+
+      {/* Onboarding tips */}
+      <OnboardingTips isSignedIn={!!pubkey} />
 
       {/* Repo list header */}
       <div className="flex items-center justify-between mb-5 animate-hacker-fade-up">
