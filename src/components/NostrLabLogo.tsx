@@ -1,9 +1,10 @@
 interface Props {
   size?: number;
   className?: string;
+  style?: React.CSSProperties;
 }
 
-export default function NostrLabLogo({ size = 28, className = "" }: Props) {
+export default function NostrLabLogo({ size = 28, className = "", style }: Props) {
   return (
     <svg
       width={size}
@@ -12,7 +13,7 @@ export default function NostrLabLogo({ size = 28, className = "" }: Props) {
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
-      style={{ filter: "drop-shadow(0 0 4px rgba(191, 90, 242, 0.4))" }}
+      style={{ filter: "drop-shadow(0 0 4px rgba(191, 90, 242, 0.4))", ...style }}
     >
       {/* Body */}
       <ellipse cx="32" cy="40" rx="14" ry="10" fill="#9088b0" />

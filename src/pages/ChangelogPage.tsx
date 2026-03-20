@@ -94,6 +94,7 @@ export default function ChangelogPage() {
         version: version.trim(),
         title: title.trim(),
         content: content.trim(),
+        repoAddress: addr,
         createdAt: event.created_at,
       };
       setEntries((prev) => [newEntry, ...prev]);
