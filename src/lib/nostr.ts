@@ -390,7 +390,7 @@ export async function fetchNotifications(
   pubkey: string, since: number, relays: string[] = DEFAULT_RELAYS
 ): Promise<NotificationItem[]> {
   const events = await pool.querySync(relays, {
-    kinds: [COMMENT, ISSUE, PATCH, PULL_REQUEST, STATUS_OPEN, STATUS_APPLIED, STATUS_CLOSED],
+    kinds: [COMMENT, ISSUE, PATCH, PULL_REQUEST, STATUS_OPEN, STATUS_APPLIED, STATUS_CLOSED, BOUNTY],
     "#p": [pubkey], since, limit: 100,
   });
   return events
@@ -505,6 +505,81 @@ export async function publishPullRequest(
   );
   await Promise.allSettled(pool.publish(relays, event));
   return event;
+}
+
+export async function publishBountyClaim(
+  sk: Signer,
+  params: {
+    bountyId: string;
+    bountyPubkey: string;
+    repoAddress: string;
+    content: string;
+  },
+  relays: string[] = DEFAULT_RELAYS
+): Promise<Event> {
+  const event = await signWith(sk, {
+    kind: BOUNTY,
+    content: params.content,
+    tags: [
+      ["e", params.bountyId, "", "reply"],
+      ["a", params.repoAddress],
+      ["p", params.bountyPubkey],
+      ["status", "claimed"],
+    ],
+    created_at: Math.floor(Date.now() / 1000),
+  });
+  await Promise.allSettled(pool.publish(relays, event));
+  return event;
+}
+
+export async function publishBountyPayment(
+  sk: Signer,
+  params: {
+    bountyId: string;
+    claimantPubkey: string;
+    repoAddress: string;
+    content: string;
+  },
+  relays: string[] = DEFAULT_RELAYS
+): Promise<Event> {
+  const event = await signWith(sk, {
+    kind: BOUNTY,
+    content: params.content,
+    tags: [
+      ["e", params.bountyId, "", "reply"],
+      ["a", params.repoAddress],
+      ["p", params.claimantPubkey],
+      ["status", "paid"],
+    ],
+    created_at: Math.floor(Date.now() / 1000),
+  });
+  await Promise.allSettled(pool.publish(relays, event));
+  return event;
+}
+
+export async function fetchBountyUpdates(
+  bountyIds: string[],
+  relays: string[] = DEFAULT_RELAYS
+): Promise<Map<string, { status: "claimed" | "paid"; claimedBy?: string }>> {
+  if (bountyIds.length === 0) return new Map();
+  const events = await pool.querySync(relays, { kinds: [BOUNTY], "#e": bountyIds });
+  const result = new Map<string, { status: "claimed" | "paid"; claimedBy?: string }>();
+
+  // Process events in chronological order so latest status wins
+  const sorted = events.sort((a, b) => a.created_at - b.created_at);
+  for (const e of sorted) {
+    const bountyId = e.tags.find((t) => t[0] === "e")?.[1];
+    const status = e.tags.find((t) => t[0] === "status")?.[1];
+    if (!bountyId || (status !== "claimed" && status !== "paid")) continue;
+
+    const existing = result.get(bountyId);
+    if (status === "claimed") {
+      result.set(bountyId, { status: "claimed", claimedBy: e.pubkey });
+    } else if (status === "paid") {
+      result.set(bountyId, { status: "paid", claimedBy: existing?.claimedBy ?? e.tags.find((t) => t[0] === "p")?.[1] });
+    }
+  }
+  return result;
 }
 
 export async function publishComment(

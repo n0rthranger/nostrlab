@@ -240,6 +240,16 @@ export interface BountyEvent {
   issueId?: string;
   amountSats: number;
   status: "open" | "claimed" | "paid";
+  claimedBy?: string;
+  createdAt: number;
+}
+
+export interface BountyUpdate {
+  id: string;
+  pubkey: string;
+  bountyId: string;
+  status: "claimed" | "paid";
+  content: string;
   createdAt: number;
 }
 

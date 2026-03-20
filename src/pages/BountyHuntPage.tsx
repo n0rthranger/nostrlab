@@ -3,16 +3,22 @@ import { Link } from "react-router-dom";
 import {
   pool,
   fetchProfiles,
-  fetchRepos,
+  fetchBountyUpdates,
+  publishBountyClaim,
+  publishBountyPayment,
+  resolveLud16,
+  requestZapInvoice,
   shortenKey,
   timeAgo,
   repoAddress,
   signWith,
   DEFAULT_RELAYS,
 } from "../lib/nostr";
+import type { LnurlPayInfo } from "../lib/nostr";
 import { BOUNTY, REPO_ANNOUNCEMENT } from "../types/nostr";
 import type { BountyEvent, UserProfile, RepoAnnouncement } from "../types/nostr";
 import { useAuth } from "../hooks/useAuth";
+import { useWallet } from "../hooks/useWallet";
 import { useToast } from "../components/Toast";
 
 interface EnrichedBounty extends BountyEvent {
@@ -23,6 +29,7 @@ interface EnrichedBounty extends BountyEvent {
 
 export default function BountyHuntPage() {
   const { pubkey: authPubkey, signer } = useAuth();
+  const { connected: nwcConnected, payInvoice: nwcPayInvoice } = useWallet();
   const { toast } = useToast();
   const [bounties, setBounties] = useState<EnrichedBounty[]>([]);
   const [profiles, setProfiles] = useState<Map<string, UserProfile>>(new Map());
@@ -39,15 +46,20 @@ export default function BountyHuntPage() {
   const [creating, setCreating] = useState(false);
   const [loadingRepos, setLoadingRepos] = useState(false);
 
+  // Claim/pay state
+  const [claimingId, setClaimingId] = useState<string | null>(null);
+  const [claimMessage, setClaimMessage] = useState("");
+  const [payingId, setPayingId] = useState<string | null>(null);
+  const [payInvoice, setPayInvoice] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
-      // Fetch all bounties across all repos
       const events = await pool.querySync(DEFAULT_RELAYS, { kinds: [BOUNTY], limit: 200 });
       if (cancelled) return;
 
-      // Filter to only real bounty events: must have "amount" tag and "a" tag with valid repo address
       const parsed: EnrichedBounty[] = events
         .filter((e) => {
           const hasAmount = e.tags.some((t) => t[0] === "amount" && t[1] && parseInt(t[1], 10) > 0);
@@ -72,7 +84,18 @@ export default function BountyHuntPage() {
           };
         });
 
-      // Fetch repo names for each unique repo address
+      // Fetch status updates (claims/payments)
+      const bountyIds = parsed.map((b) => b.id);
+      const updates = await fetchBountyUpdates(bountyIds);
+      for (const b of parsed) {
+        const update = updates.get(b.id);
+        if (update) {
+          b.status = update.status;
+          b.claimedBy = update.claimedBy;
+        }
+      }
+
+      // Fetch repo names
       const repoAddrs = [...new Set(parsed.map((b) => b.repoAddress).filter(Boolean))];
       const repoNames = new Map<string, string>();
 
@@ -86,7 +109,7 @@ export default function BountyHuntPage() {
               const name = re.tags.find((t) => t[0] === "name")?.[1] ?? re.tags.find((t) => t[0] === "d")?.[1] ?? "";
               repoNames.set(addr, name);
             }
-          } catch { /* skip failed lookups */ }
+          } catch { /* skip */ }
         });
         await Promise.allSettled(fetchPromises);
       }
@@ -98,9 +121,12 @@ export default function BountyHuntPage() {
       parsed.sort((a, b) => b.amountSats - a.amountSats);
       setBounties(parsed);
 
-      const pubkeys = [...new Set(parsed.map((b) => b.pubkey))];
-      if (pubkeys.length > 0) {
-        const profs = await fetchProfiles(pubkeys);
+      const allPubkeys = [...new Set([
+        ...parsed.map((b) => b.pubkey),
+        ...parsed.filter((b) => b.claimedBy).map((b) => b.claimedBy!),
+      ])];
+      if (allPubkeys.length > 0) {
+        const profs = await fetchProfiles(allPubkeys);
         if (!cancelled) setProfiles(profs);
       }
       setLoading(false);
@@ -109,7 +135,6 @@ export default function BountyHuntPage() {
     return () => { cancelled = true; };
   }, []);
 
-  // Load user's repos when form is opened
   const handleOpenForm = async () => {
     setShowForm(true);
     if (userRepos.length > 0 || !authPubkey) return;
@@ -170,6 +195,121 @@ export default function BountyHuntPage() {
       toast(err instanceof Error ? err.message : "Failed to create bounty", "error");
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleClaim = async (bounty: EnrichedBounty) => {
+    if (!signer || !authPubkey) return;
+    setActionLoading(true);
+    try {
+      await publishBountyClaim(signer, {
+        bountyId: bounty.id,
+        bountyPubkey: bounty.pubkey,
+        repoAddress: bounty.repoAddress,
+        content: claimMessage || "I'd like to work on this bounty",
+      });
+      toast("Bounty claimed! The poster will be notified.", "success");
+      setBounties((prev) => prev.map((b) =>
+        b.id === bounty.id ? { ...b, status: "claimed" as const, claimedBy: authPubkey } : b
+      ));
+      setClaimingId(null);
+      setClaimMessage("");
+    } catch (err: unknown) {
+      toast(err instanceof Error ? err.message : "Failed to claim bounty", "error");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handlePay = async (bounty: EnrichedBounty) => {
+    if (!signer || !bounty.claimedBy) return;
+    setActionLoading(true);
+    try {
+      const claimantProfs = await fetchProfiles([bounty.claimedBy]);
+      const claimantProfile = claimantProfs.get(bounty.claimedBy);
+      const lud16 = claimantProfile?.lud16;
+
+      if (!lud16) {
+        toast("Claimant hasn't set a lightning address. Contact them directly to pay.", "error");
+        setActionLoading(false);
+        return;
+      }
+
+      let lnurlInfo: LnurlPayInfo;
+      try {
+        lnurlInfo = await resolveLud16(lud16);
+      } catch {
+        toast("Could not resolve claimant's lightning address", "error");
+        setActionLoading(false);
+        return;
+      }
+
+      const amountMsats = bounty.amountSats * 1000;
+      const bolt11 = await requestZapInvoice(signer, {
+        recipientPubkey: bounty.claimedBy,
+        targetId: bounty.id,
+        amountMsats,
+        lnurlPayInfo: lnurlInfo,
+        content: `Bounty payment: ${bounty.content}`,
+      });
+
+      if (nwcConnected) {
+        try {
+          await nwcPayInvoice(bolt11);
+          await markPaid(bounty);
+          return;
+        } catch { /* fall through */ }
+      }
+
+      if (window.webln) {
+        try {
+          await window.webln.enable();
+          await window.webln.sendPayment(bolt11);
+          await markPaid(bounty);
+          return;
+        } catch { /* fall through */ }
+      }
+
+      setPayingId(bounty.id);
+      setPayInvoice(bolt11);
+    } catch (err: unknown) {
+      toast(err instanceof Error ? err.message : "Failed to create payment", "error");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const markPaid = async (bounty: EnrichedBounty) => {
+    if (!signer || !bounty.claimedBy) return;
+    await publishBountyPayment(signer, {
+      bountyId: bounty.id,
+      claimantPubkey: bounty.claimedBy,
+      repoAddress: bounty.repoAddress,
+      content: "Bounty paid!",
+    });
+    toast("Bounty paid! Thank you for supporting open source.", "success");
+    setBounties((prev) => prev.map((b) =>
+      b.id === bounty.id ? { ...b, status: "paid" as const } : b
+    ));
+    setPayingId(null);
+    setPayInvoice(null);
+  };
+
+  const handleMarkPaidManual = async (bounty: EnrichedBounty) => {
+    setActionLoading(true);
+    try {
+      await markPaid(bounty);
+    } catch (err: unknown) {
+      toast(err instanceof Error ? err.message : "Failed to mark as paid", "error");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const copyInvoice = () => {
+    if (payInvoice) {
+      navigator.clipboard.writeText(payInvoice);
+      toast("Invoice copied to clipboard", "success");
     }
   };
 
@@ -344,7 +484,14 @@ export default function BountyHuntPage() {
           </div>
           {filtered.map((b) => {
             const author = profiles.get(b.pubkey);
+            const claimant = b.claimedBy ? profiles.get(b.claimedBy) : undefined;
             const statusColor = b.status === "open" ? "text-green" : b.status === "paid" ? "text-accent" : "text-orange";
+            const isOwner = authPubkey === b.pubkey;
+            const isOpen = b.status === "open";
+            const isClaimed = b.status === "claimed";
+            const canClaim = signer && isOpen && !isOwner;
+            const canPay = signer && isClaimed && isOwner;
+
             return (
               <div key={b.id} className="Box-row hover:bg-bg-tertiary/50 transition-colors">
                 <div className="flex items-start gap-4">
@@ -367,9 +514,95 @@ export default function BountyHuntPage() {
                       </Link>
                       <span className="text-border">|</span>
                       <span>by {author?.name ?? shortenKey(b.pubkey)}</span>
+                      {b.claimedBy && (
+                        <>
+                          <span className="text-border">|</span>
+                          <span>claimed by {claimant?.name ?? shortenKey(b.claimedBy)}</span>
+                        </>
+                      )}
                       <span className="text-border">|</span>
                       <span>{timeAgo(b.createdAt)}</span>
                     </div>
+
+                    {/* Claim form */}
+                    {claimingId === b.id && (
+                      <div className="mt-3 flex gap-2 items-end">
+                        <div className="flex-1">
+                          <label className="text-[10px] text-text-muted block mb-1">Message to bounty poster</label>
+                          <input
+                            type="text"
+                            value={claimMessage}
+                            onChange={(e) => setClaimMessage(e.target.value)}
+                            placeholder="I'd like to work on this bounty"
+                            className="w-full bg-bg-primary border border-border rounded-md px-2.5 py-1.5 text-xs text-text-primary focus:outline-none focus:border-accent"
+                          />
+                        </div>
+                        <button
+                          onClick={() => handleClaim(b)}
+                          disabled={actionLoading}
+                          className="btn btn-primary btn-sm"
+                        >
+                          {actionLoading ? "..." : "Submit Claim"}
+                        </button>
+                        <button
+                          onClick={() => { setClaimingId(null); setClaimMessage(""); }}
+                          className="btn btn-sm"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Pay invoice display */}
+                    {payingId === b.id && payInvoice && (
+                      <div className="mt-3 p-3 bg-bg-primary border border-border rounded-lg">
+                        <div className="text-xs text-text-secondary mb-2 font-medium">Pay this invoice to complete the bounty:</div>
+                        <div
+                          onClick={copyInvoice}
+                          className="bg-bg-secondary border border-border rounded-md p-2 text-[10px] font-mono text-text-muted break-all cursor-pointer hover:border-orange max-h-16 overflow-y-auto mb-2"
+                          title="Click to copy"
+                        >
+                          {payInvoice}
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={copyInvoice} className="btn btn-sm flex-1">Copy Invoice</button>
+                          <a
+                            href={/^ln(bc|tb|tbs)1[a-z0-9]+$/i.test(payInvoice) ? `lightning:${payInvoice}` : "#"}
+                            className="btn btn-sm flex-1 text-center no-underline bg-orange text-white hover:brightness-110"
+                          >
+                            Open Wallet
+                          </a>
+                        </div>
+                        <button
+                          onClick={() => handleMarkPaidManual(b)}
+                          disabled={actionLoading}
+                          className="btn btn-sm mt-2 w-full text-green"
+                        >
+                          {actionLoading ? "..." : "I've paid — mark as complete"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="shrink-0 flex gap-1.5">
+                    {canClaim && claimingId !== b.id && (
+                      <button
+                        onClick={() => setClaimingId(b.id)}
+                        className="btn btn-sm text-green"
+                      >
+                        Claim
+                      </button>
+                    )}
+                    {canPay && payingId !== b.id && (
+                      <button
+                        onClick={() => handlePay(b)}
+                        disabled={actionLoading}
+                        className="btn btn-primary btn-sm"
+                      >
+                        {actionLoading ? "..." : "Pay"}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
