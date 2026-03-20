@@ -139,6 +139,11 @@ export async function signEventWithExtension(event: EventTemplate): Promise<Even
 
 import { getCached, putCache, TTL } from "./cache";
 
+/** Whether the browser is currently offline */
+export function isOffline(): boolean {
+  return typeof navigator !== "undefined" && !navigator.onLine;
+}
+
 // ── Query Functions ──
 
 function isUsableRepo(r: RepoAnnouncement): boolean {
@@ -149,13 +154,20 @@ export async function fetchRepos(
   relays: string[] = DEFAULT_RELAYS, limit = 50
 ): Promise<RepoAnnouncement[]> {
   const filter = { kinds: [REPO_ANNOUNCEMENT], limit };
-  const cached = await getCached(filter, (evts) => evts.map(parseRepoAnnouncement).filter(Boolean) as RepoAnnouncement[]);
+  const parser = (evts: Event[]) => evts.map(parseRepoAnnouncement).filter(Boolean) as RepoAnnouncement[];
+  const cached = await getCached(filter, parser);
   if (cached && !cached.stale) return cached.data.filter(isUsableRepo);
 
-  const events = await pool.querySync(relays, filter);
-  const parsed = events.map(parseRepoAnnouncement).filter(Boolean) as RepoAnnouncement[];
-  putCache(filter, events, TTL.LIST);
-  return parsed.filter(isUsableRepo);
+  try {
+    const events = await pool.querySync(relays, filter);
+    const parsed = events.map(parseRepoAnnouncement).filter(Boolean) as RepoAnnouncement[];
+    putCache(filter, events, TTL.LIST);
+    return parsed.filter(isUsableRepo);
+  } catch {
+    // Offline: return stale cache if available
+    if (cached) return cached.data.filter(isUsableRepo);
+    return [];
+  }
 }
 
 export async function fetchReposByPubkey(
@@ -169,12 +181,18 @@ export async function fetchRepo(
   pubkey: string, identifier: string, relays: string[] = DEFAULT_RELAYS
 ): Promise<RepoAnnouncement | null> {
   const filter = { kinds: [REPO_ANNOUNCEMENT], authors: [pubkey], "#d": [identifier], limit: 1 };
-  const cached = await getCached(filter, (evts) => evts.map(parseRepoAnnouncement).filter(Boolean) as RepoAnnouncement[]);
+  const parser = (evts: Event[]) => evts.map(parseRepoAnnouncement).filter(Boolean) as RepoAnnouncement[];
+  const cached = await getCached(filter, parser);
   if (cached && !cached.stale && cached.data.length > 0) return cached.data[0];
 
-  const events = await pool.querySync(relays, filter);
-  if (events.length > 0) putCache(filter, events, TTL.REPO);
-  return events.length > 0 ? parseRepoAnnouncement(events[0]) : null;
+  try {
+    const events = await pool.querySync(relays, filter);
+    if (events.length > 0) putCache(filter, events, TTL.REPO);
+    return events.length > 0 ? parseRepoAnnouncement(events[0]) : null;
+  } catch {
+    if (cached && cached.data.length > 0) return cached.data[0];
+    return null;
+  }
 }
 
 export async function fetchRepoState(
@@ -191,53 +209,79 @@ export async function fetchIssues(
   repoAddress: string, relays: string[] = DEFAULT_RELAYS
 ): Promise<IssueEvent[]> {
   const filter = { kinds: [ISSUE], "#a": [repoAddress] };
-  const cached = await getCached(filter, (evts) => evts.map(parseIssue).filter(Boolean) as IssueEvent[]);
+  const parser = (evts: Event[]) => evts.map(parseIssue).filter(Boolean) as IssueEvent[];
+  const cached = await getCached(filter, parser);
   if (cached && !cached.stale) return cached.data;
 
-  const events = await pool.querySync(relays, filter);
-  putCache(filter, events, TTL.LIST);
-  return events.map(parseIssue).filter(Boolean) as IssueEvent[];
+  try {
+    const events = await pool.querySync(relays, filter);
+    putCache(filter, events, TTL.LIST);
+    return events.map(parseIssue).filter(Boolean) as IssueEvent[];
+  } catch {
+    if (cached) return cached.data;
+    return [];
+  }
 }
 
 export async function fetchPatches(
   repoAddress: string, relays: string[] = DEFAULT_RELAYS
 ): Promise<PatchEvent[]> {
   const filter = { kinds: [PATCH], "#a": [repoAddress] };
-  const cached = await getCached(filter, (evts) => evts.map(parsePatch).filter(Boolean) as PatchEvent[]);
+  const parser = (evts: Event[]) => evts.map(parsePatch).filter(Boolean) as PatchEvent[];
+  const cached = await getCached(filter, parser);
   if (cached && !cached.stale) return cached.data;
 
-  const events = await pool.querySync(relays, filter);
-  putCache(filter, events, TTL.LIST);
-  return events.map(parsePatch).filter(Boolean) as PatchEvent[];
+  try {
+    const events = await pool.querySync(relays, filter);
+    putCache(filter, events, TTL.LIST);
+    return events.map(parsePatch).filter(Boolean) as PatchEvent[];
+  } catch {
+    if (cached) return cached.data;
+    return [];
+  }
 }
 
 export async function fetchPullRequests(
   repoAddress: string, relays: string[] = DEFAULT_RELAYS
 ): Promise<PullRequestEvent[]> {
   const filter = { kinds: [PULL_REQUEST], "#a": [repoAddress] };
-  const cached = await getCached(filter, (evts) => evts.map(parsePullRequest).filter(Boolean) as PullRequestEvent[]);
+  const parser = (evts: Event[]) => evts.map(parsePullRequest).filter(Boolean) as PullRequestEvent[];
+  const cached = await getCached(filter, parser);
   if (cached && !cached.stale) return cached.data;
 
-  const events = await pool.querySync(relays, filter);
-  putCache(filter, events, TTL.LIST);
-  return events.map(parsePullRequest).filter(Boolean) as PullRequestEvent[];
+  try {
+    const events = await pool.querySync(relays, filter);
+    putCache(filter, events, TTL.LIST);
+    return events.map(parsePullRequest).filter(Boolean) as PullRequestEvent[];
+  } catch {
+    if (cached) return cached.data;
+    return [];
+  }
 }
 
 export async function fetchComments(
   rootId: string, relays: string[] = DEFAULT_RELAYS
 ): Promise<CommentEvent[]> {
-  const events = await pool.querySync(relays, { kinds: [COMMENT], "#E": [rootId] });
-  return events.map(parseComment).filter(Boolean) as CommentEvent[];
+  try {
+    const events = await pool.querySync(relays, { kinds: [COMMENT], "#E": [rootId] });
+    return events.map(parseComment).filter(Boolean) as CommentEvent[];
+  } catch {
+    return [];
+  }
 }
 
 export async function fetchStatuses(
   targetIds: string[], relays: string[] = DEFAULT_RELAYS
 ): Promise<StatusEvent[]> {
   if (targetIds.length === 0) return [];
-  const events = await pool.querySync(relays, {
-    kinds: [STATUS_OPEN, STATUS_APPLIED, STATUS_CLOSED, STATUS_DRAFT], "#e": targetIds,
-  });
-  return events.map(parseStatus).filter(Boolean) as StatusEvent[];
+  try {
+    const events = await pool.querySync(relays, {
+      kinds: [STATUS_OPEN, STATUS_APPLIED, STATUS_CLOSED, STATUS_DRAFT], "#e": targetIds,
+    });
+    return events.map(parseStatus).filter(Boolean) as StatusEvent[];
+  } catch {
+    return [];
+  }
 }
 
 export async function fetchProfiles(
@@ -273,11 +317,20 @@ export async function fetchProfiles(
     return profiles;
   }
 
-  const events = await pool.querySync(relays, filter);
-  putCache(filter, events, TTL.PROFILE);
-  const profiles = new Map<string, UserProfile>();
-  for (const p of parseProfileEvents(events)) profiles.set(p.pubkey, p);
-  return profiles;
+  try {
+    const events = await pool.querySync(relays, filter);
+    putCache(filter, events, TTL.PROFILE);
+    const profiles = new Map<string, UserProfile>();
+    for (const p of parseProfileEvents(events)) profiles.set(p.pubkey, p);
+    return profiles;
+  } catch {
+    if (cached) {
+      const profiles = new Map<string, UserProfile>();
+      for (const p of cached.data) profiles.set(p.pubkey, p);
+      return profiles;
+    }
+    return new Map();
+  }
 }
 
 // ── Snippets ──

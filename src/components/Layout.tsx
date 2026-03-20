@@ -8,6 +8,7 @@ import { useRelays } from "../hooks/useRelays";
 import NotificationBell from "./NotificationBell";
 import NostrLabLogo from "./NostrLabLogo";
 import RelayStatusIndicator from "./RelayStatusIndicator";
+import OfflineBanner from "./OfflineBanner";
 import type { UserProfile } from "../types/nostr";
 
 export default function Layout() {
@@ -49,6 +50,7 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen flex flex-col">
+      <OfflineBanner />
       {/* Glassmorphism header */}
       <header className="border-b border-border/50 sticky top-0 z-50 header-glow header-hacker">
         <div className="max-w-[1280px] mx-auto px-4 h-14 flex items-center gap-4">

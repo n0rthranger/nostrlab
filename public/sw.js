@@ -1,15 +1,18 @@
-const CACHE_NAME = 'nostrlab-v1';
-const STATIC_ASSETS = [
+const CACHE_VERSION = 2;
+const STATIC_CACHE = 'nostrlab-static-v' + CACHE_VERSION;
+const FONT_CACHE = 'nostrlab-fonts-v1';
+
+const SHELL_URLS = [
   '/',
   '/index.html',
   '/manifest.json',
   '/favicon.svg',
 ];
 
-// Install: pre-cache core static assets
+// Install: pre-cache app shell
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
+    caches.open(STATIC_CACHE).then((cache) => cache.addAll(SHELL_URLS))
   );
   self.skipWaiting();
 });
@@ -20,7 +23,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((keys) =>
       Promise.all(
         keys
-          .filter((key) => key !== CACHE_NAME)
+          .filter((key) => key !== STATIC_CACHE && key !== FONT_CACHE)
           .map((key) => caches.delete(key))
       )
     )
@@ -28,37 +31,55 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch: cache-first for static assets, network-first for everything else
+// Fetch handler
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Skip non-GET requests
+  // Skip non-GET
   if (request.method !== 'GET') return;
 
-  // Skip WebSocket (relay) connections
+  // Skip WebSocket connections
   if (url.protocol === 'wss:' || url.protocol === 'ws:') return;
 
-  // Network-first for API / relay HTTP requests
-  if (url.pathname.startsWith('/api') || url.hostname !== self.location.hostname) {
-    event.respondWith(networkFirst(request));
+  // Google Fonts: cache-first with separate long-lived cache
+  if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') {
+    event.respondWith(fontCacheFirst(request));
     return;
   }
 
-  // Cache-first for static assets (js, css, images, fonts)
+  // Hashed static assets (js, css with hash in filename): cache-first, immutable
+  if (isHashedAsset(url.pathname)) {
+    event.respondWith(cacheFirst(request));
+    return;
+  }
+
+  // Other static assets (images, icons, etc)
   if (isStaticAsset(url.pathname)) {
     event.respondWith(cacheFirst(request));
     return;
   }
 
-  // Network-first for navigation and everything else
+  // SPA navigation: serve index.html for same-origin HTML requests
+  if (request.mode === 'navigate' || (request.headers.get('accept') || '').includes('text/html')) {
+    event.respondWith(spaNavigationHandler(request));
+    return;
+  }
+
+  // Everything else: network-first with cache fallback
   event.respondWith(networkFirst(request));
 });
 
-function isStaticAsset(pathname) {
-  return /\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|eot)(\?.*)?$/.test(pathname);
+// Hashed assets contain a hash in their filename (e.g., index-DHwpmiX6.js)
+function isHashedAsset(pathname) {
+  return /\/assets\/.*-[a-zA-Z0-9]{8,}\.(js|css)(\?.*)?$/.test(pathname);
 }
 
+function isStaticAsset(pathname) {
+  return /\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|eot|webp|avif)(\?.*)?$/.test(pathname);
+}
+
+// Cache-first: return cached version, or fetch and cache
 async function cacheFirst(request) {
   const cached = await caches.match(request);
   if (cached) return cached;
@@ -66,27 +87,62 @@ async function cacheFirst(request) {
   try {
     const response = await fetch(request);
     if (response.ok) {
-      const cache = await caches.open(CACHE_NAME);
+      const cache = await caches.open(STATIC_CACHE);
       cache.put(request, response.clone());
     }
     return response;
   } catch {
+    return new Response('', { status: 503 });
+  }
+}
+
+// Font cache-first with dedicated long-lived cache
+async function fontCacheFirst(request) {
+  const cached = await caches.match(request);
+  if (cached) return cached;
+
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const cache = await caches.open(FONT_CACHE);
+      cache.put(request, response.clone());
+    }
+    return response;
+  } catch {
+    return new Response('', { status: 503 });
+  }
+}
+
+// SPA navigation: try network, fall back to cached index.html
+async function spaNavigationHandler(request) {
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const cache = await caches.open(STATIC_CACHE);
+      cache.put('/', response.clone());
+    }
+    return response;
+  } catch {
+    // Offline: serve cached index.html for any route (SPA handles routing)
+    const cached = await caches.match('/') || await caches.match('/index.html');
+    if (cached) return cached;
     return offlineFallback();
   }
 }
 
+// Network-first with cache fallback
 async function networkFirst(request) {
   try {
     const response = await fetch(request);
     if (response.ok) {
-      const cache = await caches.open(CACHE_NAME);
+      const cache = await caches.open(STATIC_CACHE);
       cache.put(request, response.clone());
     }
     return response;
   } catch {
     const cached = await caches.match(request);
     if (cached) return cached;
-    return offlineFallback();
+    return new Response('', { status: 503 });
   }
 }
 
