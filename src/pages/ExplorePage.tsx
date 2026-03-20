@@ -151,12 +151,14 @@ export default function ExplorePage() {
                 <div className="mt-4 font-mono text-[10px] text-cyan opacity-30">// NIP-34 protocol</div>
               </div>
             </div>
+
+            {/* Onboarding tips for visitors */}
+            <div className="mt-12 max-w-3xl mx-auto px-4">
+              <OnboardingTips />
+            </div>
           </div>
         </div>
       )}
-
-      {/* Onboarding tips */}
-      <OnboardingTips isSignedIn={!!pubkey} />
 
       {/* Repo list header */}
       <div className="flex items-center justify-between mb-5 animate-hacker-fade-up">
