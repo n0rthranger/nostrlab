@@ -54,20 +54,19 @@ export default function BountyHuntPage() {
       const repoNames = new Map<string, string>();
 
       if (repoAddrs.length > 0) {
-        const repoFilters = repoAddrs.map((addr) => {
+        // Fetch repo names by querying each repo individually
+        const fetchPromises = repoAddrs.map(async (addr) => {
           const [, pubkey, identifier] = addr.split(":");
-          return { kinds: [REPO_ANNOUNCEMENT], authors: [pubkey], "#d": [identifier], limit: 1 };
+          if (!pubkey || !identifier) return;
+          try {
+            const events = await pool.querySync(DEFAULT_RELAYS, { kinds: [REPO_ANNOUNCEMENT], authors: [pubkey], "#d": [identifier], limit: 1 });
+            for (const re of events) {
+              const name = re.tags.find((t) => t[0] === "name")?.[1] ?? re.tags.find((t) => t[0] === "d")?.[1] ?? "";
+              repoNames.set(addr, name);
+            }
+          } catch { /* skip failed lookups */ }
         });
-        // Batch fetch repos (max 10 at a time)
-        for (let i = 0; i < repoFilters.length; i += 10) {
-          const batch = repoFilters.slice(i, i + 10);
-          const repoEvents = await pool.querySync(DEFAULT_RELAYS, ...batch);
-          for (const re of repoEvents) {
-            const addr = `30617:${re.pubkey}:${re.tags.find((t) => t[0] === "d")?.[1] ?? ""}`;
-            const name = re.tags.find((t) => t[0] === "name")?.[1] ?? re.tags.find((t) => t[0] === "d")?.[1] ?? "";
-            repoNames.set(addr, name);
-          }
-        }
+        await Promise.allSettled(fetchPromises);
       }
 
       // Enrich bounties with repo names

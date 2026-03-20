@@ -3,6 +3,15 @@ import { Link } from "react-router-dom";
 
 const DISMISSED_KEY = "nostrlab-onboarding-dismissed";
 
+// Static class map — Tailwind needs full class names at build time
+const colorClasses: Record<string, { bg: string; border: string; text: string }> = {
+  accent: { bg: "bg-accent/10", border: "border-accent/20", text: "text-accent" },
+  green: { bg: "bg-green/10", border: "border-green/20", text: "text-green" },
+  purple: { bg: "bg-purple/10", border: "border-purple/20", text: "text-purple" },
+  orange: { bg: "bg-orange/10", border: "border-orange/20", text: "text-orange" },
+  cyan: { bg: "bg-cyan/10", border: "border-cyan/20", text: "text-cyan" },
+};
+
 interface Tip {
   id: string;
   icon: React.ReactNode;
@@ -141,7 +150,7 @@ export default function OnboardingTips({ isSignedIn }: { isSignedIn: boolean }) 
             >
               &#x2715;
             </button>
-            <div className={`w-8 h-8 rounded-lg bg-${tip.color}/10 border border-${tip.color}/20 flex items-center justify-center mb-3 text-${tip.color}`}>
+            <div className={`w-8 h-8 rounded-lg ${colorClasses[tip.color]?.bg ?? ""} border ${colorClasses[tip.color]?.border ?? ""} flex items-center justify-center mb-3 ${colorClasses[tip.color]?.text ?? ""}`}>
               {tip.icon}
             </div>
             <h4 className="text-sm font-semibold text-text-primary mb-1">{tip.title}</h4>
