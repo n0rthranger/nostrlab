@@ -46,18 +46,6 @@ const tips: Tip[] = [
     action: { label: "Bounty Hunt", to: "/bounties" },
     color: "orange",
   },
-  {
-    id: "nip07",
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-      </svg>
-    ),
-    title: "Install a Nostr extension",
-    description: "For the best experience, install a NIP-07 extension like nos2x or Alby.",
-    action: { label: "Learn more", to: "https://github.com/nicabarria/awesome-nostr?tab=readme-ov-file#nip-07-browser-extensions", external: true },
-    color: "cyan",
-  },
 ];
 
 export default function OnboardingTips() {
