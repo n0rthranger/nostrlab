@@ -54,11 +54,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const data = JSON.parse(stored);
 
         if (data.type === "ncryptsec") {
-          // Encrypted key — need password to unlock
-          if (data.pubkey) {
-            setPubkey(data.pubkey);
+          // Check if we have a session-cached decrypted key
+          const sessionNsec = sessionStorage.getItem("nostrlab-session-key");
+          if (sessionNsec) {
+            try {
+              const keys = keysFromNsec(sessionNsec);
+              setSk(keys.sk);
+              setPubkey(keys.pk);
+            } catch {
+              sessionStorage.removeItem("nostrlab-session-key");
+              if (data.pubkey) setPubkey(data.pubkey);
+              setNeedsUnlock(true);
+            }
+          } else {
+            // Encrypted key — need password to unlock
+            if (data.pubkey) setPubkey(data.pubkey);
+            setNeedsUnlock(true);
           }
-          setNeedsUnlock(true);
         } else if (data.type === "nsec") {
           // Legacy plaintext — migrate on next login, but still load
           const keys = keysFromNsec(data.value);
@@ -94,6 +106,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       "nostrlab-auth",
       JSON.stringify({ type: "ncryptsec", value: ncryptsec, pubkey: keys.pk }),
     );
+    // Cache decrypted key for this browser session (cleared on tab close)
+    sessionStorage.setItem("nostrlab-session-key", nsec);
   }, []);
 
   const loginWithExtension = useCallback(async () => {
@@ -120,6 +134,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       "nostrlab-auth",
       JSON.stringify({ type: "ncryptsec", value: ncryptsec, pubkey: keys.pk }),
     );
+    // Cache decrypted key for this browser session
+    sessionStorage.setItem("nostrlab-session-key", keys.nsec);
     return { nsec: keys.nsec, npub: keys.npub };
   }, []);
 
@@ -133,11 +149,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (data.type === "ncryptsec") {
         const decryptedSk = nip49Decrypt(data.value, password);
         setSk(decryptedSk);
-        // Derive pubkey from decrypted secret key
         const nsec = nip19.nsecEncode(decryptedSk);
         const keys = keysFromNsec(nsec);
         setPubkey(keys.pk);
         setNeedsUnlock(false);
+        // Cache for this browser session
+        sessionStorage.setItem("nostrlab-session-key", nsec);
         return true;
       } else if (data.type === "nsec") {
         // Legacy plaintext — migrate to encrypted
@@ -165,6 +182,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsExtension(false);
     setNeedsUnlock(false);
     localStorage.removeItem("nostrlab-auth");
+    sessionStorage.removeItem("nostrlab-session-key");
   }, []);
 
   const signEvent = useCallback(
