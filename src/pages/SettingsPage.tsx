@@ -291,7 +291,7 @@ export default function SettingsPage() {
       )}
 
       {/* Extension notice */}
-      {pubkey && isExtension && !nsec && (
+      {pubkey && isExtension && !sk && (
         <div className="border border-border rounded-xl bg-bg-secondary mb-5">
           <div className="px-5 py-3 border-b border-border">
             <h2 className="text-sm font-medium text-text-secondary uppercase tracking-wider">Secret Key</h2>

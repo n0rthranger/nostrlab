@@ -76,7 +76,7 @@ export default function PatchPage() {
       parentKind: parseInt(event.tags.find((t: string[]) => t[0] === "k")?.[1] ?? "0", 10) || 0,
       createdAt: event.created_at,
       filePath: fileTag?.[1],
-      lineNumber: lineTag ? (parseInt(lineTag[1], 10) || undefined) : undefined,
+      lineNumber: lineTag ? (isNaN(parseInt(lineTag[1], 10)) ? undefined : parseInt(lineTag[1], 10)) : undefined,
       diffSide: lineTag?.[2] as "old" | "new" | undefined,
     };
   }, [patchId]);
