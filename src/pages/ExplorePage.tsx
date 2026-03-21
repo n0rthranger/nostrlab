@@ -9,7 +9,6 @@ import NostrLabLogo from "../components/NostrLabLogo";
 import { useAuth } from "../hooks/useAuth";
 import { useRelays } from "../hooks/useRelays";
 import { useLiveEvents } from "../hooks/useSubscription";
-import OnboardingTips from "../components/OnboardingTips";
 
 export default function ExplorePage() {
   const { pubkey } = useAuth();
@@ -152,10 +151,6 @@ export default function ExplorePage() {
               </div>
             </div>
 
-            {/* Onboarding tips for visitors */}
-            <div className="mt-12 max-w-3xl mx-auto px-4">
-              <OnboardingTips />
-            </div>
           </div>
         </div>
       )}
