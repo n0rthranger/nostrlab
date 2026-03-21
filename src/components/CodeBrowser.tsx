@@ -97,13 +97,10 @@ export default function CodeBrowser({ cloneUrls, repoId, repoPubkey, repoIdentif
       if (cancelled.current) return;
       if (yes && blossomUrls.length > 0) {
         const lastUrl = localStorage.getItem(`blossom-url:${dir}`);
-        const clonedAt = localStorage.getItem(`clone-time:${dir}`);
-        const age = clonedAt ? Date.now() - Number(clonedAt) : Infinity;
-        const urlChanged = lastUrl && lastUrl !== blossomUrls[0];
-        const isStale = age > 30 * 60 * 1000;
+        const urlChanged = !lastUrl || lastUrl !== blossomUrls[0];
 
-        if (urlChanged || isStale) {
-          // Re-clone: new push detected or clone is older than 30 min
+        if (urlChanged) {
+          // Re-clone: new push or first visit with tracking
           await deleteClone(dir);
           await cloneFromBlossomUrl(blossomUrls[0], dir, cancelled);
         } else {
@@ -120,30 +117,23 @@ export default function CodeBrowser({ cloneUrls, repoId, repoPubkey, repoIdentif
           loadTree();
         }
       } else if (yes && httpUrls.length > 0) {
-        // For HTTP clones, re-clone if older than 30 minutes to pick up new pushes
-        const clonedAt = localStorage.getItem(`clone-time:${dir}`);
-        const age = clonedAt ? Date.now() - Number(clonedAt) : Infinity;
-        if (age > 30 * 60 * 1000) {
-          await deleteClone(dir);
-          setCloning(true);
-          setProgress("Updating repository...");
-          try {
-            await cloneRepo(httpUrls[0], dir, (phase, loaded, total) => {
-              if (!cancelled.current) setProgress(`${phase}: ${loaded}${total ? `/${total}` : ""}`);
-            });
-            if (!cancelled.current) {
-              localStorage.setItem(`clone-time:${dir}`, String(Date.now()));
-              setCloned(true);
-              await loadTree();
-            }
-          } catch (err: unknown) {
-            if (!cancelled.current) setError(err instanceof Error ? err.message : "Clone failed");
-          } finally {
-            if (!cancelled.current) { setCloning(false); setProgress(""); }
+        // Always re-clone HTTP repos to pick up new pushes
+        await deleteClone(dir);
+        setCloning(true);
+        setProgress("Updating repository...");
+        try {
+          await cloneRepo(httpUrls[0], dir, (phase, loaded, total) => {
+            if (!cancelled.current) setProgress(`${phase}: ${loaded}${total ? `/${total}` : ""}`);
+          });
+          if (!cancelled.current) {
+            localStorage.setItem(`clone-time:${dir}`, String(Date.now()));
+            setCloned(true);
+            await loadTree();
           }
-        } else {
-          setCloned(true);
-          loadTree();
+        } catch (err: unknown) {
+          if (!cancelled.current) setError(err instanceof Error ? err.message : "Clone failed");
+        } finally {
+          if (!cancelled.current) { setCloning(false); setProgress(""); }
         }
       } else if (yes) {
         setCloned(true);
