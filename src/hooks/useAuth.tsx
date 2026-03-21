@@ -16,6 +16,8 @@ import {
   type Signer,
 } from "../lib/nostr";
 import { finalizeEvent, type Event, type EventTemplate } from "nostr-tools";
+import { encrypt as nip49Encrypt, decrypt as nip49Decrypt } from "nostr-tools/nip49";
+import { nip19 } from "nostr-tools";
 
 interface AuthState {
   pubkey: string | null;
@@ -23,9 +25,12 @@ interface AuthState {
   sk: Uint8Array | null;
   isExtension: boolean;
   signer: Signer | null;
-  login: (nsec: string) => void;
+  /** True when an encrypted key exists but hasn't been unlocked yet */
+  needsUnlock: boolean;
+  login: (nsec: string, password: string) => void;
   loginWithExtension: () => Promise<boolean>;
-  generateAndLogin: () => { nsec: string; npub: string };
+  generateAndLogin: (password: string) => { nsec: string; npub: string };
+  unlock: (password: string) => boolean;
   logout: () => void;
   signEvent: (event: EventTemplate) => Promise<Event | null>;
 }
@@ -36,42 +41,59 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [pubkey, setPubkey] = useState<string | null>(null);
   const [sk, setSk] = useState<Uint8Array | null>(null);
   const [isExtension, setIsExtension] = useState(false);
+  const [needsUnlock, setNeedsUnlock] = useState(false);
 
+  // On mount, check stored auth
   useEffect(() => {
     let mounted = true;
     (async () => {
       const stored = localStorage.getItem("nostrlab-auth");
-      if (stored) {
-        try {
-          const { type, value } = JSON.parse(stored);
-          if (type === "nsec") {
-            const keys = keysFromNsec(value);
-            setSk(keys.sk);
-            setPubkey(keys.pk);
-          } else if (type === "extension") {
-            const pk = await getPublicKeyFromExtension();
-            if (!mounted) return;
-            if (pk) {
-              setPubkey(pk);
-              setIsExtension(true);
-            } else {
-              localStorage.removeItem("nostrlab-auth");
-            }
+      if (!stored) return;
+
+      try {
+        const data = JSON.parse(stored);
+
+        if (data.type === "ncryptsec") {
+          // Encrypted key — need password to unlock
+          if (data.pubkey) {
+            setPubkey(data.pubkey);
           }
-        } catch {
-          localStorage.removeItem("nostrlab-auth");
+          setNeedsUnlock(true);
+        } else if (data.type === "nsec") {
+          // Legacy plaintext — migrate on next login, but still load
+          const keys = keysFromNsec(data.value);
+          setSk(keys.sk);
+          setPubkey(keys.pk);
+        } else if (data.type === "extension") {
+          const pk = await getPublicKeyFromExtension();
+          if (!mounted) return;
+          if (pk) {
+            setPubkey(pk);
+            setIsExtension(true);
+          } else {
+            localStorage.removeItem("nostrlab-auth");
+          }
         }
+      } catch {
+        localStorage.removeItem("nostrlab-auth");
       }
     })();
     return () => { mounted = false; };
   }, []);
 
-  const login = useCallback((nsec: string) => {
+  const login = useCallback((nsec: string, password: string) => {
     const keys = keysFromNsec(nsec);
     setSk(keys.sk);
     setPubkey(keys.pk);
     setIsExtension(false);
-    localStorage.setItem("nostrlab-auth", JSON.stringify({ type: "nsec", value: nsec }));
+    setNeedsUnlock(false);
+
+    // Encrypt with NIP-49 before storing
+    const ncryptsec = nip49Encrypt(keys.sk, password, 16);
+    localStorage.setItem(
+      "nostrlab-auth",
+      JSON.stringify({ type: "ncryptsec", value: ncryptsec, pubkey: keys.pk }),
+    );
   }, []);
 
   const loginWithExtension = useCallback(async () => {
@@ -80,26 +102,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPubkey(pk);
     setSk(null);
     setIsExtension(true);
+    setNeedsUnlock(false);
     localStorage.setItem("nostrlab-auth", JSON.stringify({ type: "extension" }));
     return true;
   }, []);
 
-  const generateAndLogin = useCallback(() => {
+  const generateAndLogin = useCallback((password: string) => {
     const keys = generateKeys();
     setSk(keys.sk);
     setPubkey(keys.pk);
     setIsExtension(false);
+    setNeedsUnlock(false);
+
+    // Encrypt with NIP-49 before storing
+    const ncryptsec = nip49Encrypt(keys.sk, password, 16);
     localStorage.setItem(
       "nostrlab-auth",
-      JSON.stringify({ type: "nsec", value: keys.nsec })
+      JSON.stringify({ type: "ncryptsec", value: ncryptsec, pubkey: keys.pk }),
     );
     return { nsec: keys.nsec, npub: keys.npub };
+  }, []);
+
+  const unlock = useCallback((password: string): boolean => {
+    const stored = localStorage.getItem("nostrlab-auth");
+    if (!stored) return false;
+
+    try {
+      const data = JSON.parse(stored);
+
+      if (data.type === "ncryptsec") {
+        const decryptedSk = nip49Decrypt(data.value, password);
+        setSk(decryptedSk);
+        // Derive pubkey from decrypted secret key
+        const nsec = nip19.nsecEncode(decryptedSk);
+        const keys = keysFromNsec(nsec);
+        setPubkey(keys.pk);
+        setNeedsUnlock(false);
+        return true;
+      } else if (data.type === "nsec") {
+        // Legacy plaintext — migrate to encrypted
+        const keys = keysFromNsec(data.value);
+        setSk(keys.sk);
+        setPubkey(keys.pk);
+        setNeedsUnlock(false);
+
+        const ncryptsec = nip49Encrypt(keys.sk, password, 16);
+        localStorage.setItem(
+          "nostrlab-auth",
+          JSON.stringify({ type: "ncryptsec", value: ncryptsec, pubkey: keys.pk }),
+        );
+        return true;
+      }
+    } catch {
+      return false;
+    }
+    return false;
   }, []);
 
   const logout = useCallback(() => {
     setPubkey(null);
     setSk(null);
     setIsExtension(false);
+    setNeedsUnlock(false);
     localStorage.removeItem("nostrlab-auth");
   }, []);
 
@@ -113,17 +177,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       return null;
     },
-    [sk, isExtension]
+    [sk, isExtension],
   );
 
-  // Signer compatible with lib functions — works for both nsec and extension users
   const signer: Signer | null = useMemo(() => {
     if (sk) return sk;
-    if (isExtension) return (async (event: EventTemplate) => {
-      const signed = await signEventWithExtension(event);
-      if (!signed) throw new Error("Extension signing failed or was rejected");
-      return signed;
-    });
+    if (isExtension)
+      return async (event: EventTemplate) => {
+        const signed = await signEventWithExtension(event);
+        if (!signed) throw new Error("Extension signing failed or was rejected");
+        return signed;
+      };
     return null;
   }, [sk, isExtension]);
 
@@ -135,9 +199,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         sk,
         isExtension,
         signer,
+        needsUnlock,
         login,
         loginWithExtension,
         generateAndLogin,
+        unlock,
         logout,
         signEvent,
       }}

@@ -11,8 +11,10 @@ import RelayStatusIndicator from "./RelayStatusIndicator";
 import OfflineBanner from "./OfflineBanner";
 import type { UserProfile } from "../types/nostr";
 
+import UnlockScreen from "./UnlockScreen";
+
 export default function Layout() {
-  const { pubkey, npub, logout } = useAuth();
+  const { pubkey, npub, logout, needsUnlock } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { globalRelays } = useRelays();
   const location = useLocation();
@@ -47,6 +49,10 @@ export default function Layout() {
 
   const isActive = (path: string) =>
     location.pathname === path ? "font-semibold text-text-primary" : "text-text-secondary hover:text-text-primary";
+
+  if (needsUnlock) {
+    return <UnlockScreen />;
+  }
 
   return (
     <div className="min-h-screen flex flex-col">
