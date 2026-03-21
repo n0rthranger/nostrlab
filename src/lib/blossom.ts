@@ -9,6 +9,10 @@ export const BLOSSOM_AUTH_KIND = 24242;
 
 export const DEFAULT_BLOSSOM_SERVERS = [
   "https://blossom.primal.net",
+  "https://blossom.nostr.build",
+  "https://blossom.band",
+  "https://nostrcheck.me",
+  "https://files.sovbit.host",
   "https://cdn.satellite.earth",
 ];
 
@@ -81,11 +85,41 @@ export async function uploadBlob(
   }
 
   const result = await response.json();
+  const primaryUrl = result.url ?? `${server}/${hash}`;
+
+  // Mirror to other servers in the background for redundancy
+  mirrorToServers(signer, data, hash, server).catch(() => {});
+
   return {
-    url: result.url ?? `${server}/${hash}`,
+    url: primaryUrl,
     sha256: hash,
     size: data.length,
   };
+}
+
+/**
+ * Mirror a blob to all other Blossom servers for redundancy.
+ * Runs in background, failures are silently ignored.
+ */
+async function mirrorToServers(
+  signer: Signer,
+  data: Uint8Array,
+  hash: string,
+  excludeServer: string,
+): Promise<void> {
+  const others = DEFAULT_BLOSSOM_SERVERS.filter((s) => s !== excludeServer);
+  const authEvent = await createAuthEvent(signer, "upload", hash);
+  const auth = authHeader(authEvent);
+
+  await Promise.allSettled(
+    others.map((server) =>
+      fetch(`${server}/upload`, {
+        method: "PUT",
+        headers: { "Authorization": auth, "Content-Type": "application/octet-stream" },
+        body: data,
+      }).catch(() => {})
+    ),
+  );
 }
 
 /**

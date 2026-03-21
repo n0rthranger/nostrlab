@@ -9,6 +9,10 @@ export const BLOSSOM_AUTH_KIND = 24242;
 
 export const DEFAULT_BLOSSOM_SERVERS = [
   "https://blossom.primal.net",
+  "https://blossom.nostr.build",
+  "https://blossom.band",
+  "https://nostrcheck.me",
+  "https://files.sovbit.host",
   "https://cdn.satellite.earth",
 ];
 
@@ -48,11 +52,12 @@ export async function uploadBlob(
 ): Promise<{ url: string; sha256: string }> {
   const hash = sha256hex(data);
   const authEvent = createAuthEvent(sk, "upload", hash);
+  const auth = authHeader(authEvent);
 
   const response = await fetch(`${server}/upload`, {
     method: "PUT",
     headers: {
-      "Authorization": authHeader(authEvent),
+      "Authorization": auth,
       "Content-Type": "application/octet-stream",
     },
     body: data as unknown as BodyInit,
@@ -64,8 +69,22 @@ export async function uploadBlob(
   }
 
   const result = await response.json();
+  const primaryUrl = result.url ?? `${server}/${hash}`;
+
+  // Mirror to other servers for redundancy (background, best-effort)
+  const others = DEFAULT_BLOSSOM_SERVERS.filter((s) => s !== server);
+  Promise.allSettled(
+    others.map((s) =>
+      fetch(`${s}/upload`, {
+        method: "PUT",
+        headers: { "Authorization": auth, "Content-Type": "application/octet-stream" },
+        body: data as unknown as BodyInit,
+      }).catch(() => {})
+    ),
+  ).catch(() => {});
+
   return {
-    url: result.url ?? `${server}/${hash}`,
+    url: primaryUrl,
     sha256: hash,
   };
 }
