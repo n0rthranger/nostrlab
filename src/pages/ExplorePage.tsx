@@ -105,7 +105,7 @@ export default function ExplorePage() {
             </h1>
             <p className="text-text-secondary text-base md:text-lg max-w-2xl mx-auto mb-10 animate-hacker-fade-up stagger-2 leading-relaxed px-4">
               NostrLab is a decentralized alternative to GitHub built on the Nostr protocol.
-              Your repos, issues, and patches live on relays — not corporate servers.
+              Issues, patches, and repo metadata live on relays. Code is stored on Blossom — decentralized file hosting you can self-host or choose your provider.
             </p>
             <div className="flex items-center justify-center gap-4 animate-hacker-fade-up stagger-3">
               <Link to="/login" className="btn btn-primary px-6 py-2.5 text-base no-underline hover:no-underline animate-pulse-glow rounded-xl" style={{ animationDuration: '3s' }}>
