@@ -114,6 +114,32 @@ export default function CodeBrowser({ cloneUrls, repoId, repoPubkey, repoIdentif
           setCloned(true);
           loadTree();
         }
+      } else if (yes && httpUrls.length > 0) {
+        // For HTTP clones, re-clone if older than 30 minutes to pick up new pushes
+        const clonedAt = localStorage.getItem(`clone-time:${dir}`);
+        const age = clonedAt ? Date.now() - Number(clonedAt) : Infinity;
+        if (age > 30 * 60 * 1000) {
+          await deleteClone(dir);
+          setCloning(true);
+          setProgress("Updating repository...");
+          try {
+            await cloneRepo(httpUrls[0], dir, (phase, loaded, total) => {
+              if (!cancelled.current) setProgress(`${phase}: ${loaded}${total ? `/${total}` : ""}`);
+            });
+            if (!cancelled.current) {
+              localStorage.setItem(`clone-time:${dir}`, String(Date.now()));
+              setCloned(true);
+              await loadTree();
+            }
+          } catch (err: unknown) {
+            if (!cancelled.current) setError(err instanceof Error ? err.message : "Clone failed");
+          } finally {
+            if (!cancelled.current) { setCloning(false); setProgress(""); }
+          }
+        } else {
+          setCloned(true);
+          loadTree();
+        }
       } else if (yes) {
         setCloned(true);
         loadTree();
@@ -128,6 +154,7 @@ export default function CodeBrowser({ cloneUrls, repoId, repoPubkey, repoIdentif
             if (!cancelled.current) setProgress(`${phase}: ${loaded}${total ? `/${total}` : ""}`);
           });
           if (!cancelled.current) {
+            localStorage.setItem(`clone-time:${dir}`, String(Date.now()));
             setCloned(true);
             await loadTree();
           }
