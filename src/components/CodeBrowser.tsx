@@ -78,8 +78,9 @@ export default function CodeBrowser({ cloneUrls, repoId, repoPubkey, repoIdentif
     try {
       await cloneFromBlossom(url, targetDir, (msg) => setProgress(msg));
       if (cancelled.current) return;
-      // Remember which URL we cloned from
+      // Remember which URL we cloned from and when
       localStorage.setItem(`blossom-url:${targetDir}`, url);
+      localStorage.setItem(`clone-time:${targetDir}`, String(Date.now()));
       setCloned(true);
       await loadTree();
     } catch (err: unknown) {
@@ -95,17 +96,21 @@ export default function CodeBrowser({ cloneUrls, repoId, repoPubkey, repoIdentif
     isCloned(dir).then(async (yes) => {
       if (cancelled.current) return;
       if (yes && blossomUrls.length > 0) {
-        // Check if the Blossom URL changed (new push happened)
         const lastUrl = localStorage.getItem(`blossom-url:${dir}`);
-        if (lastUrl && lastUrl !== blossomUrls[0]) {
-          // New code was pushed — re-clone
+        const clonedAt = localStorage.getItem(`clone-time:${dir}`);
+        const age = clonedAt ? Date.now() - Number(clonedAt) : Infinity;
+        const urlChanged = lastUrl && lastUrl !== blossomUrls[0];
+        const isStale = age > 30 * 60 * 1000;
+
+        if (urlChanged || isStale) {
+          // Re-clone: new push detected or clone is older than 30 min
           await deleteClone(dir);
           await cloneFromBlossomUrl(blossomUrls[0], dir, cancelled);
         } else {
           // Verify the clone has files — if empty, re-clone
           try {
             const tree = await listFiles(dir);
-            if (tree.length === 0 && blossomUrls.length > 0) {
+            if (tree.length === 0) {
               await deleteClone(dir);
               await cloneFromBlossomUrl(blossomUrls[0], dir, cancelled);
               return;
