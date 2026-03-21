@@ -25,9 +25,6 @@ export const ZAP_RECEIPT = 9735;
 // Discussions (custom kind for repo discussions)
 export const DISCUSSION = 1622;
 
-// Wiki (custom kind for repo wiki pages)
-export const WIKI_PAGE = 30818;
-
 // Bounty (custom kind)
 export const BOUNTY = 1623;
 
@@ -205,17 +202,6 @@ export interface DiscussionEvent {
   repoAddress: string;
   subject: string;
   category: string;
-  createdAt: number;
-}
-
-// Wiki types
-export interface WikiPageEvent {
-  id: string;
-  pubkey: string;
-  content: string;
-  repoAddress: string;
-  identifier: string;
-  title: string;
   createdAt: number;
 }
 

@@ -34,7 +34,6 @@ const ActivityPage = lazy(() => import("./pages/ActivityPage"));
 const EventThreadPage = lazy(() => import("./pages/EventThreadPage"));
 const RepoSettingsPage = lazy(() => import("./pages/RepoSettingsPage"));
 const DiscussionsPage = lazy(() => import("./pages/DiscussionsPage"));
-const WikiPage = lazy(() => import("./pages/WikiPage"));
 const BountyPage = lazy(() => import("./pages/BountyPage"));
 const BountyHuntPage = lazy(() => import("./pages/BountyHuntPage"));
 const SearchPage = lazy(() => import("./pages/SearchPage"));
@@ -91,8 +90,6 @@ export default function App() {
                         <Route path="/repo/:pubkey/:identifier/settings" element={<RepoSettingsPage />} />
                         <Route path="/repo/:pubkey/:identifier/discussions" element={<DiscussionsPage />} />
                         <Route path="/repo/:pubkey/:identifier/discussions/:discussionId" element={<DiscussionsPage />} />
-                        <Route path="/repo/:pubkey/:identifier/wiki" element={<WikiPage />} />
-                        <Route path="/repo/:pubkey/:identifier/wiki/:pageSlug" element={<WikiPage />} />
                         <Route path="/repo/:pubkey/:identifier/bounties" element={<BountyPage />} />
                         <Route path="/repo/:pubkey/:identifier/insights" element={<RepoInsightsPage />} />
                         <Route path="/repo/:pubkey/:identifier/changelog" element={<ChangelogPage />} />
