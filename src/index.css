@@ -191,9 +191,9 @@ html[data-theme="light"] .Counter {
 /* ── Cyberpunk underline nav ── */
 .UnderlineNav {
   display: flex;
+  flex-wrap: wrap;
   border-bottom: 1px solid var(--color-border);
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
+  overflow-x: hidden;
 }
 .UnderlineNav-item {
   display: flex;
