@@ -35,9 +35,10 @@ interface Props {
   repoDescription?: string;
   repoTags?: string[];
   showCommitHistory?: boolean;
+  onCloneFailed?: () => void;
 }
 
-export default function CodeBrowser({ cloneUrls, repoId, repoPubkey, repoIdentifier, repoName, repoDescription, repoTags, showCommitHistory }: Props) {
+export default function CodeBrowser({ cloneUrls, repoId, repoPubkey, repoIdentifier, repoName, repoDescription, repoTags, showCommitHistory, onCloneFailed }: Props) {
   const dir = `/${repoId}`;
   const { pubkey, signer } = useAuth();
   const isOwner = !!(pubkey && repoPubkey && pubkey === repoPubkey);
@@ -231,6 +232,7 @@ export default function CodeBrowser({ cloneUrls, repoId, repoPubkey, repoIdentif
       } else {
         setError(msg);
       }
+      onCloneFailed?.();
     } finally {
       setCloning(false);
       setProgress("");

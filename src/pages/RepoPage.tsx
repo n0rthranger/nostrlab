@@ -430,6 +430,7 @@ export default function RepoPage() {
               repoDescription={repo.description}
               repoTags={repo.tags}
               showCommitHistory
+              onCloneFailed={() => setCodeSource("nostr")}
             />
           ) : (
             <NostrCodeBrowser
