@@ -70,31 +70,38 @@ export default function CodeBrowser({ cloneUrls, repoId, repoPubkey, repoIdentif
   const [pushStatus, setPushStatus] = useState("");
 
   useEffect(() => {
+    if (cloned || cloning) return;
     let cancelled = false;
+    console.log("[CodeBrowser] useEffect: dir=", dir, "blossomUrls=", blossomUrls, "httpUrls=", httpUrls);
     isCloned(dir).then(async (yes) => {
       if (cancelled) return;
       if (yes) {
+        console.log("[CodeBrowser] Already cloned, loading tree");
         setCloned(true);
         loadTree();
       } else if (blossomUrls.length > 0) {
         // Auto-clone from Blossom
+        console.log("[CodeBrowser] Auto-cloning from Blossom:", blossomUrls[0]);
         setCloning(true);
         setProgress("Downloading from Blossom...");
         try {
-          await cloneFromBlossom(blossomUrls[0], dir, (msg) => setProgress(msg));
+          await cloneFromBlossom(blossomUrls[0], dir, (msg) => { console.log("[CodeBrowser]", msg); setProgress(msg); });
           if (cancelled) return;
           setCloned(true);
           await loadTree();
         } catch (err: unknown) {
+          console.error("[CodeBrowser] Clone failed:", err);
           if (!cancelled) setError(err instanceof Error ? err.message : "Clone from Blossom failed");
         } finally {
           if (!cancelled) { setCloning(false); setProgress(""); }
         }
+      } else {
+        console.log("[CodeBrowser] No blossom URLs available, canBrowse=", canBrowse);
       }
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dir]);
+  }, [dir, blossomUrls.length]);
 
   // Keyboard shortcut for file search
   useEffect(() => {
