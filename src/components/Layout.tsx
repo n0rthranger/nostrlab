@@ -294,7 +294,6 @@ export default function Layout() {
           <div className="flex items-center gap-3">
             <NostrLabLogo size={18} />
             <span className="gradient-text font-semibold font-mono tracking-wide">NostrLab</span>
-            <span className="text-text-muted/40 font-mono text-[10px]">v0.1</span>
           </div>
           <div className="flex items-center gap-4 hide-mobile">
             <RelayStatusIndicator />
