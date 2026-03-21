@@ -440,6 +440,7 @@ export default function RepoPage() {
               repoName={repo.name}
               repoDescription={repo.description}
               repoTags={repo.tags}
+              showCommitHistory
             />
           ) : (
             <NostrCodeBrowser

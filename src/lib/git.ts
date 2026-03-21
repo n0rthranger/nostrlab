@@ -186,6 +186,113 @@ export async function gitLog(dir: string, depth = 50): Promise<CommitInfo[]> {
   }
 }
 
+// ── Commit Detail (changed files between commit and parent) ──
+
+export interface FileChange {
+  path: string;
+  type: "add" | "modify" | "delete";
+}
+
+export interface CommitDetail extends CommitInfo {
+  files: FileChange[];
+}
+
+/** Walk a tree recursively, returning { path: oid } map */
+async function walkTree(
+  fsInstance: LightningFS,
+  dir: string,
+  treeOid: string,
+  prefix: string = "",
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  try {
+    const { tree } = await git.readTree({ fs: fsInstance, dir, oid: treeOid });
+    for (const entry of tree) {
+      const fullPath = prefix ? `${prefix}/${entry.path}` : entry.path;
+      if (entry.type === "blob") {
+        result.set(fullPath, entry.oid);
+      } else if (entry.type === "tree") {
+        const sub = await walkTree(fsInstance, dir, entry.oid, fullPath);
+        for (const [k, v] of sub) result.set(k, v);
+      }
+    }
+  } catch { /* skip */ }
+  return result;
+}
+
+export async function getCommitDetail(dir: string, oid: string): Promise<CommitDetail> {
+  const fsInstance = getFS();
+  const { commit, oid: resolvedOid } = await git.readCommit({ fs: fsInstance, dir, oid });
+
+  const currentTree = await walkTree(fsInstance, dir, commit.tree);
+
+  let parentTree = new Map<string, string>();
+  if (commit.parent.length > 0) {
+    const { commit: parentCommit } = await git.readCommit({ fs: fsInstance, dir, oid: commit.parent[0] });
+    parentTree = await walkTree(fsInstance, dir, parentCommit.tree);
+  }
+
+  const files: FileChange[] = [];
+
+  // Files added or modified
+  for (const [path, blobOid] of currentTree) {
+    const parentOid = parentTree.get(path);
+    if (!parentOid) {
+      files.push({ path, type: "add" });
+    } else if (parentOid !== blobOid) {
+      files.push({ path, type: "modify" });
+    }
+  }
+
+  // Files deleted
+  for (const path of parentTree.keys()) {
+    if (!currentTree.has(path)) {
+      files.push({ path, type: "delete" });
+    }
+  }
+
+  files.sort((a, b) => a.path.localeCompare(b.path));
+
+  return {
+    oid: resolvedOid,
+    message: commit.message,
+    author: {
+      name: commit.author.name,
+      email: commit.author.email,
+      timestamp: commit.author.timestamp,
+    },
+    parent: commit.parent,
+    files,
+  };
+}
+
+export async function readFileAtCommit(dir: string, oid: string, filepath: string): Promise<string | null> {
+  const fsInstance = getFS();
+  try {
+    const { commit } = await git.readCommit({ fs: fsInstance, dir, oid });
+    const { tree } = await git.readTree({ fs: fsInstance, dir, oid: commit.tree });
+
+    // Walk the path
+    const parts = filepath.split("/");
+    let currentTree = tree;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const entry = currentTree.find((e) => e.path === parts[i] && e.type === "tree");
+      if (!entry) return null;
+      const result = await git.readTree({ fs: fsInstance, dir, oid: entry.oid });
+      currentTree = result.tree;
+    }
+
+    const fileName = parts[parts.length - 1];
+    const blob = currentTree.find((e) => e.path === fileName && e.type === "blob");
+    if (!blob) return null;
+
+    const { object } = await git.readBlob({ fs: fsInstance, dir, oid: blob.oid });
+    return new TextDecoder().decode(object);
+  } catch {
+    return null;
+  }
+}
+
 // ── Git Blame (approximate — walk log per file) ──
 
 export interface BlameLine {

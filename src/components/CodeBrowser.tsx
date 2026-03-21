@@ -34,9 +34,10 @@ interface Props {
   repoName?: string;
   repoDescription?: string;
   repoTags?: string[];
+  showCommitHistory?: boolean;
 }
 
-export default function CodeBrowser({ cloneUrls, repoId, repoPubkey, repoIdentifier, repoName, repoDescription, repoTags }: Props) {
+export default function CodeBrowser({ cloneUrls, repoId, repoPubkey, repoIdentifier, repoName, repoDescription, repoTags, showCommitHistory }: Props) {
   const dir = `/${repoId}`;
   const { pubkey, signer } = useAuth();
   const isOwner = !!(pubkey && repoPubkey && pubkey === repoPubkey);
@@ -721,6 +722,13 @@ export default function CodeBrowser({ cloneUrls, repoId, repoPubkey, repoIdentif
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Commit history below file browser */}
+      {viewMode === "code" && showCommitHistory && cloned && (
+        <div className="mt-6">
+          <CommitHistory repoDir={dir} />
         </div>
       )}
 
