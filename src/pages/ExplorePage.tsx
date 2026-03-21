@@ -96,21 +96,18 @@ export default function ExplorePage() {
                 <NostrLabLogo size={80} className="mx-auto" style={{ borderRadius: '50%' }} />
               </div>
             </div>
-            <div className="animate-hacker-fade-up stagger-1">
-              <p className="text-[11px] font-mono text-cyan tracking-[0.4em] uppercase mb-4 opacity-60">// initializing protocol</p>
-            </div>
-            <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold mb-5 animate-hacker-fade-up stagger-2 tracking-tight">
-              <span className="glitch-text text-text-primary">Code collaboration,</span>
-              <br className="hidden md:block" />{" "}
+            <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold mb-5 animate-hacker-fade-up stagger-1 tracking-tight">
               <span className="hero-title-gradient">
-                decentralized
+                Decentralized
               </span>
+              <br className="hidden md:block" />{" "}
+              <span className="glitch-text text-text-primary">code collaboration</span>
             </h1>
-            <p className="text-text-secondary text-base md:text-lg max-w-2xl mx-auto mb-10 animate-hacker-fade-up stagger-3 leading-relaxed px-4">
+            <p className="text-text-secondary text-base md:text-lg max-w-2xl mx-auto mb-10 animate-hacker-fade-up stagger-2 leading-relaxed px-4">
               NostrLab is a decentralized alternative to GitHub built on the Nostr protocol.
               Your repos, issues, and patches live on relays — not corporate servers.
             </p>
-            <div className="flex items-center justify-center gap-4 animate-hacker-fade-up stagger-4">
+            <div className="flex items-center justify-center gap-4 animate-hacker-fade-up stagger-3">
               <Link to="/login" className="btn btn-primary px-6 py-2.5 text-base no-underline hover:no-underline animate-pulse-glow rounded-xl" style={{ animationDuration: '3s' }}>
                 <span className="font-mono">&gt;</span> Get Started
               </Link>
@@ -124,8 +121,8 @@ export default function ExplorePage() {
               </a>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-16 max-w-3xl mx-auto text-left px-4">
-              <div className="Box p-6 feature-card animate-hacker-fade-up stagger-5 rounded-xl">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-16 max-w-5xl mx-auto text-left px-4">
+              <div className="Box p-6 feature-card animate-hacker-fade-up stagger-4 rounded-xl">
                 <div className="w-10 h-10 rounded-lg bg-green/10 border border-green/20 flex items-center justify-center mb-4">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-green"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                 </div>
@@ -133,7 +130,7 @@ export default function ExplorePage() {
                 <p className="text-xs text-text-secondary leading-relaxed">Your cryptographic keys are your account. No email, no password, no company can lock you out.</p>
                 <div className="mt-4 font-mono text-[10px] text-cyan opacity-30">// nostr keypair auth</div>
               </div>
-              <div className="Box p-6 feature-card animate-hacker-fade-up stagger-6 rounded-xl">
+              <div className="Box p-6 feature-card animate-hacker-fade-up stagger-5 rounded-xl">
                 <div className="w-10 h-10 rounded-lg bg-accent/10 border border-accent/20 flex items-center justify-center mb-4">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
                 </div>
@@ -141,13 +138,21 @@ export default function ExplorePage() {
                 <p className="text-xs text-text-secondary leading-relaxed">Your repos are announced to multiple relays. No single point of failure or control.</p>
                 <div className="mt-4 font-mono text-[10px] text-cyan opacity-30">// multi-relay broadcast</div>
               </div>
-              <div className="Box p-6 feature-card animate-hacker-fade-up stagger-7 rounded-xl">
+              <div className="Box p-6 feature-card animate-hacker-fade-up stagger-6 rounded-xl">
                 <div className="w-10 h-10 rounded-lg bg-purple/10 border border-purple/20 flex items-center justify-center mb-4">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-purple"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
                 </div>
                 <h3 className="font-semibold text-sm mb-2 glitch-text">Git Compatible</h3>
                 <p className="text-xs text-text-secondary leading-relaxed">Submit patches, open issues, review PRs — all using standard git workflows over Nostr events.</p>
                 <div className="mt-4 font-mono text-[10px] text-cyan opacity-30">// NIP-34 protocol</div>
+              </div>
+              <div className="Box p-6 feature-card animate-hacker-fade-up stagger-7 rounded-xl">
+                <div className="w-10 h-10 rounded-lg bg-orange/10 border border-orange/20 flex items-center justify-center mb-4">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-orange"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                </div>
+                <h3 className="font-semibold text-sm mb-2 glitch-text">Bitcoin Bounties</h3>
+                <p className="text-xs text-text-secondary leading-relaxed">Fund open-source work with Bitcoin. Post bounties on issues and pay contributors instantly over Lightning.</p>
+                <div className="mt-4 font-mono text-[10px] text-cyan opacity-30">// lightning payments</div>
               </div>
             </div>
 
