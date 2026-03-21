@@ -303,6 +303,9 @@ export default function Layout() {
             <Link to="/repo/f57d15a911fcf57dbea28801a9f5f411a02cf759742c8247ce08471f3d910973/nostrlab" className="text-text-muted hover:text-accent transition-colors no-underline" title="NostrLab on Nostr">
               <NostrLabLogo size={16} style={{ filter: "none" }} />
             </Link>
+            <Link to="/help" className="text-text-muted hover:text-accent transition-colors no-underline text-[10px] font-mono">
+              Help
+            </Link>
             <span className="font-mono text-[10px] opacity-50">
               <span className="text-cyan">$</span> press <kbd className="px-1.5 py-0.5 bg-bg-tertiary/50 border border-accent/15 rounded-md text-[10px] text-accent/80">?</kbd> for shortcuts
             </span>

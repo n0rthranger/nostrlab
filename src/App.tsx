@@ -45,6 +45,7 @@ const ProjectBoardPage = lazy(() => import("./pages/ProjectBoardPage"));
 const ImportPage = lazy(() => import("./pages/ImportPage"));
 const MessagesPage = lazy(() => import("./pages/MessagesPage"));
 const TeamsPage = lazy(() => import("./pages/TeamsPage"));
+const HelpPage = lazy(() => import("./pages/HelpPage"));
 
 function PageLoader() {
   return (
@@ -106,6 +107,7 @@ export default function App() {
                         <Route path="/event/:eventId" element={<EventThreadPage />} />
                         <Route path="/user/:npubOrPubkey" element={<UserPage />} />
                         <Route path="/user/:npubOrPubkey/:tab" element={<UserPage />} />
+                        <Route path="/help" element={<HelpPage />} />
                         <Route path="*" element={<NotFoundPage />} />
                       </Route>
                     </Routes>
