@@ -6,6 +6,7 @@ import { useToast } from "../components/Toast";
 import { DEFAULT_RELAYS, shortenKey } from "../lib/nostr";
 import { clearCache } from "../lib/cache";
 import { nip19 } from "nostr-tools";
+import { decrypt as nip49Decrypt } from "nostr-tools/nip49";
 
 export default function SettingsPage() {
   const { pubkey, npub, sk, isExtension } = useAuth();
@@ -14,9 +15,57 @@ export default function SettingsPage() {
   const { toast } = useToast();
   const [newRelay, setNewRelay] = useState("");
   const [nwcInput, setNwcInput] = useState("");
-  const [showNsec, setShowNsec] = useState(false);
+  const [revealedNsec, setRevealedNsec] = useState<string | null>(null);
+  const [unlockPassword, setUnlockPassword] = useState("");
+  const [unlockError, setUnlockError] = useState("");
+  const [showUnlockPrompt, setShowUnlockPrompt] = useState(false);
+  const [decrypting, setDecrypting] = useState(false);
 
-  const nsec = sk ? nip19.nsecEncode(sk) : null;
+  // Check if key is stored encrypted
+  const storedAuth = localStorage.getItem("nostrlab-auth");
+  const storedData = storedAuth ? JSON.parse(storedAuth) : null;
+  const isEncrypted = storedData?.type === "ncryptsec";
+  const ncryptsec = isEncrypted ? storedData.value : null;
+
+  // For legacy unencrypted keys, derive nsec directly
+  const legacyNsec = !isEncrypted && sk ? nip19.nsecEncode(sk) : null;
+
+  const handleRevealNsec = () => {
+    if (legacyNsec) {
+      // Legacy unencrypted — show directly
+      setRevealedNsec(revealedNsec ? null : legacyNsec);
+      return;
+    }
+    if (revealedNsec) {
+      // Already revealed — hide it
+      setRevealedNsec(null);
+      return;
+    }
+    // Encrypted — show password prompt
+    setShowUnlockPrompt(true);
+    setUnlockPassword("");
+    setUnlockError("");
+  };
+
+  const handleDecryptAndReveal = () => {
+    if (!ncryptsec || !unlockPassword) return;
+    setDecrypting(true);
+    setUnlockError("");
+
+    setTimeout(() => {
+      try {
+        const decryptedSk = nip49Decrypt(ncryptsec, unlockPassword);
+        const nsec = nip19.nsecEncode(decryptedSk);
+        setRevealedNsec(nsec);
+        setShowUnlockPrompt(false);
+        setUnlockPassword("");
+      } catch {
+        setUnlockError("Wrong password.");
+      }
+      setDecrypting(false);
+    }, 50);
+  };
+
   const [testing, setTesting] = useState<Record<string, "ok" | "fail" | "testing">>({});
 
   const addRelay = () => {
@@ -123,7 +172,7 @@ export default function SettingsPage() {
       )}
 
       {/* Secret Key section */}
-      {pubkey && nsec && (
+      {pubkey && !isExtension && (
         <div className="border border-border rounded-xl bg-bg-secondary mb-5">
           <div className="px-5 py-3 border-b border-border">
             <h2 className="text-sm font-medium text-text-secondary uppercase tracking-wider">Secret Key</h2>
@@ -138,20 +187,35 @@ export default function SettingsPage() {
                 <p>Anyone with your nsec has full control of your Nostr identity. Save it somewhere safe — if you lose it, your account cannot be recovered.</p>
               </div>
             </div>
+
+            {/* Encryption status */}
+            {isEncrypted && (
+              <div className="flex items-center gap-2 text-xs text-green">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M4 4a4 4 0 0 1 8 0v2h.25c.966 0 1.75.784 1.75 1.75v5.5A1.75 1.75 0 0 1 12.25 15h-8.5A1.75 1.75 0 0 1 2 13.25v-5.5C2 6.784 2.784 6 3.75 6H4Zm8.25 3.5h-8.5a.25.25 0 0 0-.25.25v5.5c0 .138.112.25.25.25h8.5a.25.25 0 0 0 .25-.25v-5.5a.25.25 0 0 0-.25-.25ZM10.5 6V4a2.5 2.5 0 1 0-5 0v2Z" />
+                </svg>
+                Encrypted with NIP-49 (scrypt + XChaCha20)
+              </div>
+            )}
+
             <div>
               <label className="text-xs text-text-muted block mb-1">nsec (secret key)</label>
               <div className="flex items-center gap-2">
                 <code className="text-sm break-all flex-1 bg-bg-primary border border-border rounded-lg px-3 py-2 select-all">
-                  {showNsec ? nsec : "nsec1" + "•".repeat(58)}
+                  {revealedNsec ? revealedNsec : "nsec1" + "\u2022".repeat(58)}
                 </code>
                 <button
-                  onClick={() => setShowNsec(!showNsec)}
+                  onClick={handleRevealNsec}
                   className="btn btn-sm btn-icon shrink-0"
-                  data-tooltip={showNsec ? "Hide" : "Reveal"}
+                  data-tooltip={revealedNsec ? "Hide" : isEncrypted ? "Decrypt & Reveal" : "Reveal"}
                 >
-                  {showNsec ? (
+                  {revealedNsec ? (
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                       <path d="M.143 2.31a.75.75 0 0 1 1.047-.167l14.5 10.5a.75.75 0 1 1-.88 1.214l-2.248-1.628C11.346 13.19 9.748 13.75 8 13.75c-3.552 0-6.443-2.293-7.706-4.236a3.23 3.23 0 0 1 0-3.528 12.19 12.19 0 0 1 2.161-2.543L.31 1.857A.75.75 0 0 1 .143 2.31ZM6.154 6.533 4.336 5.217a10.69 10.69 0 0 0-2.048 2.319 1.73 1.73 0 0 0 0 1.928c1.1 1.694 3.58 3.786 5.712 3.786 1.327 0 2.572-.46 3.638-1.157L9.928 10.84A2.75 2.75 0 0 1 6.154 6.534ZM8 2.25c.557 0 1.1.07 1.623.2a.75.75 0 0 1-.374 1.452A5.71 5.71 0 0 0 8 3.75c-2.132 0-4.612 2.092-5.712 3.786a1.73 1.73 0 0 0 0 1.928c.218.335.464.656.736.96a.75.75 0 0 1-1.096 1.024 10.93 10.93 0 0 1-.874-1.143 3.23 3.23 0 0 1 0-3.528C2.435 4.827 4.815 2.25 8 2.25Zm4.283 3.456a.75.75 0 0 1 1.049.157c.394.55.748 1.14 1.051 1.76a3.23 3.23 0 0 1 0 2.224c-.42.862-.958 1.674-1.605 2.4a.75.75 0 0 1-1.118-1 10.1 10.1 0 0 0 1.37-2.043 1.73 1.73 0 0 0 0-1.208 10.7 10.7 0 0 0-.904-1.505.75.75 0 0 1 .157-1.049Z"/>
+                    </svg>
+                  ) : isEncrypted ? (
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                      <path d="M4 4a4 4 0 0 1 8 0v2h.25c.966 0 1.75.784 1.75 1.75v5.5A1.75 1.75 0 0 1 12.25 15h-8.5A1.75 1.75 0 0 1 2 13.25v-5.5C2 6.784 2.784 6 3.75 6H4Zm8.25 3.5h-8.5a.25.25 0 0 0-.25.25v5.5c0 .138.112.25.25.25h8.5a.25.25 0 0 0 .25-.25v-5.5a.25.25 0 0 0-.25-.25ZM10.5 6V4a2.5 2.5 0 1 0-5 0v2Z" />
                     </svg>
                   ) : (
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
@@ -159,18 +223,62 @@ export default function SettingsPage() {
                     </svg>
                   )}
                 </button>
-                <button
-                  onClick={() => { navigator.clipboard.writeText(nsec); toast("Secret key copied — keep it safe!", "info"); }}
-                  className="btn btn-sm btn-icon shrink-0"
-                  data-tooltip="Copy"
-                >
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/>
-                    <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/>
-                  </svg>
-                </button>
+                {revealedNsec && (
+                  <button
+                    onClick={() => { navigator.clipboard.writeText(revealedNsec); toast("Secret key copied — keep it safe!", "info"); }}
+                    className="btn btn-sm btn-icon shrink-0"
+                    data-tooltip="Copy"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                      <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/>
+                      <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/>
+                    </svg>
+                  </button>
+                )}
               </div>
             </div>
+
+            {/* Password prompt to decrypt */}
+            {showUnlockPrompt && (
+              <div className="border border-accent/30 rounded-lg p-4 bg-accent/5 space-y-3">
+                <p className="text-xs text-text-secondary">Enter your password to decrypt and reveal your secret key:</p>
+                {unlockError && (
+                  <p className="text-xs text-red">{unlockError}</p>
+                )}
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={unlockPassword}
+                    onChange={(e) => { setUnlockPassword(e.target.value); setUnlockError(""); }}
+                    placeholder="Your password"
+                    className="flex-1 bg-bg-primary border border-border rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
+                    onKeyDown={(e) => e.key === "Enter" && !decrypting && handleDecryptAndReveal()}
+                    autoFocus
+                    disabled={decrypting}
+                  />
+                  <button
+                    onClick={handleDecryptAndReveal}
+                    disabled={!unlockPassword || decrypting}
+                    className="px-4 py-2 bg-accent text-white rounded-lg text-sm font-medium disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed hover:brightness-110 flex items-center gap-2"
+                  >
+                    {decrypting ? (
+                      <>
+                        <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Decrypting
+                      </>
+                    ) : (
+                      "Reveal"
+                    )}
+                  </button>
+                  <button
+                    onClick={() => { setShowUnlockPrompt(false); setUnlockPassword(""); setUnlockError(""); }}
+                    className="px-3 py-2 bg-bg-tertiary text-text-secondary rounded-lg text-sm cursor-pointer hover:bg-border"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
