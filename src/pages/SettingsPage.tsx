@@ -370,16 +370,6 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* About section */}
-      <div className="border border-border rounded-xl bg-bg-secondary mt-5">
-        <div className="px-5 py-3 border-b border-border">
-          <h2 className="text-sm font-medium text-text-secondary uppercase tracking-wider">About</h2>
-        </div>
-        <div className="px-5 py-4 text-sm text-text-secondary space-y-2">
-          <p><strong className="text-text-primary">NostrLab</strong> — Decentralized code collaboration powered by Nostr</p>
-          <p className="text-xs text-text-muted">Built on NIP-34 (Git via Nostr), NIP-22 (Comments), NIP-07 (Browser Extensions)</p>
-        </div>
-      </div>
     </div>
   );
 }
