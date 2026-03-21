@@ -435,6 +435,11 @@ export default function RepoPage() {
             <CodeBrowser
               cloneUrls={repo.cloneUrls}
               repoId={`${repo.pubkey.slice(0, 8)}-${repo.identifier}`}
+              repoPubkey={repo.pubkey}
+              repoIdentifier={repo.identifier}
+              repoName={repo.name}
+              repoDescription={repo.description}
+              repoTags={repo.tags}
             />
           ) : (
             <NostrCodeBrowser
