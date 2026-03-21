@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getCommitDetail, readFileAtCommit, type CommitDetail as CommitDetailType } from "../lib/git";
+import { getCommitDetail, readFileAtCommit, gitLog, type CommitDetail as CommitDetailType } from "../lib/git";
 import { timeAgo } from "../lib/nostr";
 
 interface Props {
@@ -107,9 +107,20 @@ export default function CommitDetail({ repoDir, oid, onBack }: Props) {
           setLoading(false);
         }
       })
-      .catch((err) => {
+      .catch(async () => {
+        if (cancelled) return;
+        // Fallback: try to get basic info from git log
+        try {
+          const commits = await gitLog(repoDir, 1000);
+          const commit = commits.find((c) => c.oid === oid);
+          if (commit && !cancelled) {
+            setDetail({ ...commit, files: [] });
+            setLoading(false);
+            return;
+          }
+        } catch { /* ignore */ }
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load commit");
+          setError("Commit data unavailable");
           setLoading(false);
         }
       });
@@ -171,7 +182,29 @@ export default function CommitDetail({ repoDir, oid, onBack }: Props) {
   }
 
   if (error || !detail) {
-    return <div className="text-center py-8 text-red text-sm">{error || "Commit not found"}</div>;
+    return (
+      <div className="text-center py-8">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1 text-sm text-accent hover:underline bg-transparent border-0 cursor-pointer mb-4 p-0 mx-auto"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M7.78 12.53a.75.75 0 0 1-1.06 0L2.47 8.28a.75.75 0 0 1 0-1.06l4.25-4.25a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042L4.81 7h7.44a.75.75 0 0 1 0 1.5H4.81l2.97 2.97a.75.75 0 0 1 0 1.06Z" />
+          </svg>
+          Back to commits
+        </button>
+        <div className="border border-border rounded-lg p-6 bg-bg-secondary max-w-md mx-auto">
+          <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor" className="text-text-muted mx-auto mb-3">
+            <path d="M11.93 8.5a4.002 4.002 0 0 1-7.86 0H.75a.75.75 0 0 1 0-1.5h3.32a4.002 4.002 0 0 1 7.86 0h3.32a.75.75 0 0 1 0 1.5Zm-1.43-.75a2.5 2.5 0 1 0-5 0 2.5 2.5 0 0 0 5 0Z" />
+          </svg>
+          <p className="text-sm text-text-primary font-medium mb-1">Commit details unavailable</p>
+          <p className="text-xs text-text-muted">
+            This commit's data could not be read from the browser clone. This can happen with shallow clones or repos cloned via HTTP proxy.
+          </p>
+          <code className="text-xs text-text-muted mt-2 block">{oid.slice(0, 12)}</code>
+        </div>
+      </div>
+    );
   }
 
   const firstLine = detail.message.split("\n")[0];
