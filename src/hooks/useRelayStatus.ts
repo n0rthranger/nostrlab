@@ -53,7 +53,7 @@ async function checkRelay(url: string): Promise<RelayStatus> {
               lastChecked: Date.now(),
             });
           }
-        } catch { /* ignore */ }
+        } catch { cleanup(); }
       };
       ws.addEventListener("message", onMessage);
     };

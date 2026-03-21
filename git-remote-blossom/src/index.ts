@@ -10,8 +10,8 @@
  * Diagnostic messages go to stderr.
  */
 import { createInterface } from "readline";
-import { execSync } from "child_process";
-import { writeFileSync, mkdirSync, unlinkSync } from "fs";
+import { execSync, spawnSync } from "child_process";
+import { writeFileSync, mkdirSync, unlinkSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { loadKeys } from "./auth.js";
@@ -170,7 +170,7 @@ async function getRefsFromPackfile(
 
   // Cleanup
   try {
-    execSync(`rm -rf "${tmpDir}"`, { stdio: "pipe" });
+    rmSync(tmpDir, { recursive: true, force: true });
   } catch { /* best effort */ }
 
   return refs;
@@ -206,7 +206,7 @@ async function handleFetch(sha: string, ref: string): Promise<void> {
 
   // Update the ref
   try {
-    execSync(`git update-ref "${ref}" "${sha}"`, { stdio: "pipe" });
+    spawnSync("git", ["update-ref", ref, sha], { stdio: "pipe" });
   } catch (err) {
     log(`Warning: could not update ref ${ref}: ${err}`);
   }
@@ -238,11 +238,12 @@ async function handlePush(src: string, dst: string): Promise<void> {
   } catch {
     // Fallback: pack just the pushed ref
     try {
-      const result = execSync(
-        `git rev-list --objects "${src}" | git pack-objects --stdout`,
-        { maxBuffer: 100 * 1024 * 1024, encoding: "buffer" },
-      );
-      packData = new Uint8Array(result);
+      const revList = spawnSync("git", ["rev-list", "--objects", src], { encoding: "utf-8" });
+      const packResult = spawnSync("git", ["pack-objects", "--stdout"], {
+        input: revList.stdout,
+        maxBuffer: 100 * 1024 * 1024,
+      });
+      packData = new Uint8Array(packResult.stdout as Buffer);
     } catch (err) {
       log(`Error packing objects: ${err}`);
       process.stdout.write(`error ${dst} packing failed\n`);
@@ -270,7 +271,7 @@ async function handlePush(src: string, dst: string): Promise<void> {
 
   // Update repo state with current refs
   log("Publishing repo state...");
-  const sha = execSync(`git rev-parse "${src}"`, { encoding: "utf-8" }).trim();
+  const sha = spawnSync("git", ["rev-parse", src], { encoding: "utf-8" }).stdout.trim();
   const refs: Record<string, string> = {};
 
   // Get all local refs

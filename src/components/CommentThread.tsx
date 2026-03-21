@@ -45,7 +45,7 @@ export default function CommentThread({
         parentId: rootId,
         parentKind: rootKind,
         parentPubkey: rootPubkey,
-        content: newComment,
+        content: newComment.trim(),
         repoAddress,
       });
       setNewComment("");

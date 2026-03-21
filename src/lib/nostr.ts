@@ -732,7 +732,7 @@ export function parseComment(event: Event): CommentEvent | null {
     parentKind: parseInt(getTagValue(event, "k") ?? "0", 10),
     createdAt: event.created_at,
     filePath: fileTag?.[1],
-    lineNumber: lineTag ? parseInt(lineTag[1], 10) : undefined,
+    lineNumber: lineTag?.[1] ? parseInt(lineTag[1], 10) : undefined,
     diffSide: lineTag?.[2] as "old" | "new" | undefined,
   };
 }

@@ -74,8 +74,8 @@ export default function ForkDiffView({ upstreamAddress, forkAddress }: Props) {
         }
 
         // Sort: modified first, then added, then deleted, then unchanged
-        const order = { modified: 0, added: 1, deleted: 2, unchanged: 3 };
-        result.sort((a, b) => order[a.status] - order[b.status] || a.filePath.localeCompare(b.filePath));
+        const order: Record<string, number> = { modified: 0, added: 1, deleted: 2, unchanged: 3 };
+        result.sort((a, b) => (order[a.status] ?? 4) - (order[b.status] ?? 4) || a.filePath.localeCompare(b.filePath));
 
         if (!cancelled) setDiffs(result);
       } catch (err: unknown) {

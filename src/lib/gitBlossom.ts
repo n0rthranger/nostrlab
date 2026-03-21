@@ -23,6 +23,9 @@ async function readPackIndex(fsInstance: LightningFS, idxPath: string): Promise<
   // - 256 * 4 bytes fanout table
   // - N * 20 bytes OIDs (where N = fanout[255] = total objects)
 
+  // Minimum size: 8 (magic+version) + 1024 (fanout) = 1032 bytes
+  if (buf.length < 1032) return [];
+
   const magic = (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];
   const isV2 = magic === 0xff744f63; // \377tOc
 
@@ -45,6 +48,7 @@ async function readPackIndex(fsInstance: LightningFS, idxPath: string): Promise<
 
   for (let i = 0; i < totalObjects; i++) {
     const offset = oidsOffset + i * 20;
+    if (offset + 20 > buf.length) break;
     let hex = "";
     for (let j = 0; j < 20; j++) {
       hex += buf[offset + j].toString(16).padStart(2, "0");
