@@ -27,7 +27,16 @@ import {
   type RepoRefs,
 } from "./nostr.js";
 
-const log = (msg: string) => process.stderr.write(`remote: ${msg}\n`);
+// Handle EPIPE gracefully — git may close stdin/stdout before we're done
+process.stdout.on("error", (err: NodeJS.ErrnoException) => {
+  if (err.code === "EPIPE") process.exit(0);
+  throw err;
+});
+process.on("SIGPIPE", () => process.exit(0));
+
+const log = (msg: string) => {
+  try { process.stderr.write(`remote: ${msg}\n`); } catch { /* ignore */ }
+};
 
 // Parse args: git-remote-blossom <remote-name> <url>
 const [, , , url] = process.argv;
@@ -136,29 +145,27 @@ async function getRefsFromPackfile(
     log("index-pack failed, trying alternative approach...");
   }
 
-  // Get all commits and find branch tips
+  // Find commits in the packfile using verify-pack
   const refs: Record<string, string> = {};
   try {
     const output = execSync(
-      "git for-each-ref --format='%(objectname) %(refname)' refs/",
+      `git verify-pack -v "${packPath}"`,
       { cwd: tmpDir, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
     ).trim();
-    if (output) {
-      for (const line of output.split("\n")) {
-        const [sha, ref] = line.split(" ");
-        if (sha && ref) refs[ref] = sha;
+    // Lines look like: <sha> commit <size> <compressed> <offset>
+    const commits: string[] = [];
+    for (const line of output.split("\n")) {
+      const parts = line.trim().split(/\s+/);
+      if (parts[1] === "commit" && parts[0]) {
+        commits.push(parts[0]);
       }
     }
+    if (commits.length > 0) {
+      // Use the first commit (for single-commit repos) as main
+      refs["refs/heads/main"] = commits[0];
+    }
   } catch {
-    // No refs yet — try to find the latest commit
-    try {
-      const sha = execSync("git rev-list --max-count=1 --all", {
-        cwd: tmpDir,
-        encoding: "utf-8",
-        stdio: ["pipe", "pipe", "pipe"],
-      }).trim();
-      if (sha) refs["refs/heads/main"] = sha;
-    } catch { /* empty pack */ }
+    log("Could not extract commits from packfile");
   }
 
   // Cleanup
@@ -351,9 +358,11 @@ async function main(): Promise<void> {
   }
 
   closePool();
+  process.exit(0);
 }
 
 main().catch((err) => {
   log(`Fatal error: ${err.message || err}`);
+  closePool();
   process.exit(1);
 });

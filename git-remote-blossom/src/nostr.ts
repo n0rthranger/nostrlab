@@ -12,6 +12,12 @@ export const DEFAULT_RELAYS = [
   "wss://nos.lol",
   "wss://relay.nostr.band",
   "wss://relayable.org",
+  "wss://relay.primal.net",
+  "wss://relay.snort.social",
+  "wss://nostr.wine",
+  "wss://purplepag.es",
+  "wss://offchain.pub",
+  "wss://nostr.mom",
 ];
 
 const pool = new SimplePool();
@@ -33,11 +39,11 @@ export interface RepoRefs {
 
 async function queryWithTimeout(
   relays: string[],
-  filters: Filter[],
+  filter: Filter,
   timeoutMs: number = 8000,
 ): Promise<Event[]> {
   return Promise.race([
-    pool.querySync(relays, filters as unknown as Filter),
+    pool.querySync(relays, filter),
     new Promise<Event[]>((resolve) => setTimeout(() => resolve([]), timeoutMs)),
   ]);
 }
@@ -50,13 +56,12 @@ export async function fetchRepoAnnouncement(
   identifier: string,
   relays: string[] = DEFAULT_RELAYS,
 ): Promise<RepoInfo | null> {
-  const events = await queryWithTimeout(relays, [{
+  const events = await queryWithTimeout(relays, {
     kinds: [REPO_ANNOUNCEMENT],
     authors: [pubkey],
     "#d": [identifier],
     limit: 1,
-  }]);
-
+  });
   if (events.length === 0) return null;
 
   const event = events[0];
@@ -82,12 +87,12 @@ export async function fetchRepoState(
   identifier: string,
   relays: string[] = DEFAULT_RELAYS,
 ): Promise<RepoRefs | null> {
-  const events = await queryWithTimeout(relays, [{
+  const events = await queryWithTimeout(relays, {
     kinds: [REPO_STATE],
     authors: [pubkey],
     "#d": [identifier],
     limit: 1,
-  }]);
+  });
 
   if (events.length === 0) return null;
 
@@ -204,5 +209,5 @@ export function resolveIdentifier(
 }
 
 export function closePool(): void {
-  pool.close(DEFAULT_RELAYS);
+  try { pool.close(DEFAULT_RELAYS); } catch { /* ignore */ }
 }
