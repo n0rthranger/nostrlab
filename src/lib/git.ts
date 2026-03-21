@@ -32,7 +32,7 @@ export async function cloneRepo(
     dir,
     url,
     corsProxy: CORS_PROXY,
-    depth: 1,
+    depth: 100,
     singleBranch: false,
     onProgress: onProgress
       ? (progress) => onProgress(progress.phase, progress.loaded, progress.total ?? 0)
