@@ -68,7 +68,7 @@ export default function RepoPage() {
   useEffect(() => {
     if (!auth.pubkey || !pubkey || !identifier) return;
     const key = `pinned-repos-${auth.pubkey}`;
-    const list: string[] = JSON.parse(localStorage.getItem(key) || "[]");
+    const list: string[] = (() => { try { return JSON.parse(localStorage.getItem(key) || "[]"); } catch { return []; } })();
     setPinned(list.includes(`${pubkey}:${identifier}`));
   }, [auth.pubkey, pubkey, identifier]);
 
@@ -319,7 +319,7 @@ export default function RepoPage() {
           <button
             onClick={() => {
               const key = `pinned-repos-${auth.pubkey}`;
-              const list: string[] = JSON.parse(localStorage.getItem(key) || "[]");
+              const list: string[] = (() => { try { return JSON.parse(localStorage.getItem(key) || "[]"); } catch { return []; } })();
               const repoKey = `${pubkey}:${identifier}`;
               const newList = pinned ? list.filter((k) => k !== repoKey) : [...list, repoKey];
               localStorage.setItem(key, JSON.stringify(newList));

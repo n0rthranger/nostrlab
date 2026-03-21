@@ -5,6 +5,13 @@ import type { FileEntry } from "../types/nostr";
 
 const CORS_PROXY = "https://cors.isomorphic-git.org";
 
+/** Sanitize a file path to prevent directory traversal */
+function safePath(path: string): string | null {
+  const normalized = path.replace(/\\/g, "/");
+  if (normalized.includes("..") || normalized.startsWith("/")) return null;
+  return normalized;
+}
+
 let fs: LightningFS | null = null;
 
 export function getFS(): LightningFS {
@@ -87,9 +94,8 @@ export async function listFiles(dir: string, path: string = "."): Promise<FileEn
 }
 
 export async function readFile(dir: string, path: string): Promise<string | null> {
-  // Prevent path traversal
-  const normalized = path.replace(/\\/g, "/");
-  if (normalized.includes("..") || normalized.startsWith("/")) return null;
+  const normalized = safePath(path);
+  if (!normalized) return null;
   try {
     const content = await getFS().promises.readFile(`${dir}/${normalized}`, { encoding: "utf8" });
     return content as string;
@@ -267,6 +273,8 @@ export async function getCommitDetail(dir: string, oid: string): Promise<CommitD
 }
 
 export async function readFileAtCommit(dir: string, oid: string, filepath: string): Promise<string | null> {
+  const normalized = safePath(filepath);
+  if (!normalized) return null;
   const fsInstance = getFS();
   try {
     const { commit } = await git.readCommit({ fs: fsInstance, dir, oid });

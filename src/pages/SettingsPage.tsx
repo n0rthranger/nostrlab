@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRelays } from "../hooks/useRelays";
 import { useAuth } from "../hooks/useAuth";
 import { useWallet } from "../hooks/useWallet";
@@ -21,9 +21,16 @@ export default function SettingsPage() {
   const [showUnlockPrompt, setShowUnlockPrompt] = useState(false);
   const [decrypting, setDecrypting] = useState(false);
 
+  // Auto-hide revealed nsec after 30 seconds
+  useEffect(() => {
+    if (!revealedNsec) return;
+    const timer = setTimeout(() => setRevealedNsec(null), 30000);
+    return () => clearTimeout(timer);
+  }, [revealedNsec]);
+
   // Check if key is stored encrypted
   const storedAuth = localStorage.getItem("nostrlab-auth");
-  const storedData = storedAuth ? JSON.parse(storedAuth) : null;
+  const storedData = storedAuth ? (() => { try { return JSON.parse(storedAuth); } catch { return null; } })() : null;
   const isEncrypted = storedData?.type === "ncryptsec";
   const ncryptsec = isEncrypted ? storedData.value : null;
 

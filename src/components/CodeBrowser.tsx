@@ -286,8 +286,8 @@ export default function CodeBrowser({ cloneUrls, repoId, repoPubkey, repoIdentif
   };
 
   const handleCreateFile = async () => {
-    const name = newFileName.trim();
-    if (!name) return;
+    const name = newFileName.trim().replace(/\\/g, "/");
+    if (!name || name.includes("..") || name.startsWith("/") || /[<>:"|?*\x00-\x1f]/.test(name)) return;
     const fsInstance = getFS();
     // Create parent directories if needed
     const parts = name.split("/");

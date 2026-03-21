@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { gitBlame, detectLanguage, type BlameLine } from "../lib/git";
 import { timeAgo } from "../lib/nostr";
 import hljs from "highlight.js";
+import DOMPurify from "dompurify";
 
 interface Props {
   repoDir: string;
@@ -59,7 +60,7 @@ export default function BlameView({ repoDir, filepath }: Props) {
             </div>
             <div className="flex-1 px-2 py-0.5">
               {highlighted[i] ? (
-                <span dangerouslySetInnerHTML={{ __html: highlighted[i] }} />
+                <span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(highlighted[i]) }} />
               ) : (
                 <span>{line.content}</span>
               )}

@@ -42,6 +42,10 @@ async function readPackIndex(fsInstance: LightningFS, idxPath: string): Promise<
     (buf[fanoutOffset + 255 * 4 + 2] << 8) |
     buf[fanoutOffset + 255 * 4 + 3];
 
+  // Sanity check: reject unreasonably large counts
+  const MAX_OBJECTS = 500000;
+  if (totalObjects < 0 || totalObjects > MAX_OBJECTS) return [];
+
   // OIDs start after the fanout table
   const oidsOffset = fanoutOffset + 256 * 4;
   const oids: string[] = [];

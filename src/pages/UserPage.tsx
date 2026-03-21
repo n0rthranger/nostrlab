@@ -216,7 +216,7 @@ export default function UserPage() {
           {/* Pinned repos */}
           {(() => {
             const pinnedKey = `pinned-repos-${pubkey}`;
-            const pinned: string[] = JSON.parse(localStorage.getItem(pinnedKey) || "[]");
+            const pinned: string[] = (() => { try { return JSON.parse(localStorage.getItem(pinnedKey) || "[]"); } catch { return []; } })();
             const pinnedRepos = repos.filter((r) => pinned.includes(`${r.pubkey}:${r.identifier}`));
             if (pinnedRepos.length === 0) return null;
             return (

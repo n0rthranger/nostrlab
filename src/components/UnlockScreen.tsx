@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useAuth } from "../hooks/useAuth";
 import NostrLabLogo from "./NostrLabLogo";
 
@@ -7,9 +7,13 @@ export default function UnlockScreen() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [unlocking, setUnlocking] = useState(false);
+  const [attempts, setAttempts] = useState(0);
+  const [lockedUntil, setLockedUntil] = useState(0);
 
-  const handleUnlock = () => {
-    if (!password) return;
+  const isLocked = Date.now() < lockedUntil;
+
+  const handleUnlock = useCallback(() => {
+    if (!password || isLocked) return;
     setUnlocking(true);
     setError("");
 
@@ -18,14 +22,22 @@ export default function UnlockScreen() {
       try {
         const ok = unlock(password);
         if (!ok) {
-          setError("Wrong password. Please try again.");
+          const newAttempts = attempts + 1;
+          setAttempts(newAttempts);
+          if (newAttempts >= 5) {
+            const lockSeconds = Math.min(30 * Math.pow(2, newAttempts - 5), 300);
+            setLockedUntil(Date.now() + lockSeconds * 1000);
+            setError(`Too many attempts. Try again in ${lockSeconds} seconds.`);
+          } else {
+            setError(`Wrong password. ${5 - newAttempts} attempts remaining.`);
+          }
         }
       } catch {
         setError("Wrong password. Please try again.");
       }
       setUnlocking(false);
     }, 50);
-  };
+  }, [password, isLocked, unlock, attempts]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-bg-primary">
@@ -66,15 +78,15 @@ export default function UnlockScreen() {
               onChange={(e) => { setPassword(e.target.value); setError(""); }}
               placeholder="Enter your password"
               className="w-full bg-bg-primary border border-border rounded-lg px-4 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
-              onKeyDown={(e) => e.key === "Enter" && !unlocking && handleUnlock()}
+              onKeyDown={(e) => e.key === "Enter" && !unlocking && !isLocked && handleUnlock()}
               autoFocus
-              disabled={unlocking}
+              disabled={unlocking || isLocked}
             />
           </div>
 
           <button
             onClick={handleUnlock}
-            disabled={!password || unlocking}
+            disabled={!password || unlocking || isLocked}
             className="w-full mt-4 px-4 py-2.5 bg-accent hover:brightness-110 text-white rounded-lg font-medium cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed text-sm flex items-center justify-center gap-2"
           >
             {unlocking ? (
