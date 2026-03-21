@@ -13,7 +13,6 @@ export const DEFAULT_BLOSSOM_SERVERS = [
   "https://blossom.band",
   "https://nostrcheck.me",
   "https://files.sovbit.host",
-  "https://cdn.satellite.earth",
 ];
 
 /** Compute SHA-256 hex string of data */
