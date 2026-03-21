@@ -37,6 +37,7 @@ import { triggerMatchingWebhooks } from "../lib/webhooks";
 import StatusBadge from "../components/StatusBadge";
 import CodeBrowser from "../components/CodeBrowser";
 import NostrCodeBrowser from "../components/NostrCodeBrowser";
+import { isBlossomUrl } from "../lib/blossom";
 import RepoRefs from "../components/RepoRefs";
 import StarButton from "../components/StarButton";
 import ZapButton from "../components/ZapButton";
@@ -89,10 +90,10 @@ export default function RepoPage() {
       if (cancelled) return;
       setRepo(repo);
       setRepoState(state);
-      // Default to code tab if any cloneable URL exists (http, git://, or blossom)
+      // Default to code tab if any browser-cloneable URL exists (http, git://, or blossom)
       if (repo) {
-        const hasCloneUrl = repo.cloneUrls.some((u: string) => /^(https?|git):\/\//i.test(u));
-        setCodeSource(hasCloneUrl ? "git" : "nostr");
+        const hasBrowseableUrl = repo.cloneUrls.some((u: string) => /^(https?|git):\/\//i.test(u) || isBlossomUrl(u));
+        setCodeSource(hasBrowseableUrl ? "git" : "nostr");
       }
       setIssues(issues);
       setPatches(patches);
@@ -380,31 +381,34 @@ export default function RepoPage() {
         <div className="space-y-4">
           <RepoRefs repoState={repoState} />
 
-          {/* Source toggle — only show when both options are available */}
-          {repo.cloneUrls.length > 0 && (
-            <div className="flex items-center gap-1 bg-bg-tertiary rounded-lg p-1 w-fit">
-              <button
-                onClick={() => setCodeSource("git")}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md cursor-pointer border-0 transition-colors ${
-                  codeSource === "git"
-                    ? "bg-accent text-white"
-                    : "bg-transparent text-text-secondary hover:text-text-primary"
-                }`}
-              >
-                Code
-              </button>
-              <button
-                onClick={() => setCodeSource("nostr")}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md cursor-pointer border-0 transition-colors ${
-                  codeSource === "nostr"
-                    ? "bg-accent text-white"
-                    : "bg-transparent text-text-secondary hover:text-text-primary"
-                }`}
-              >
-                Nostr Files
-              </button>
-            </div>
-          )}
+          {/* Source toggle — only show Code button when browser-cloneable URLs exist */}
+          {(() => {
+            const hasBrowseableUrl = repo.cloneUrls.some((u: string) => /^(https?|git):\/\//i.test(u) || isBlossomUrl(u));
+            return hasBrowseableUrl ? (
+              <div className="flex items-center gap-1 bg-bg-tertiary rounded-lg p-1 w-fit">
+                <button
+                  onClick={() => setCodeSource("git")}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md cursor-pointer border-0 transition-colors ${
+                    codeSource === "git"
+                      ? "bg-accent text-white"
+                      : "bg-transparent text-text-secondary hover:text-text-primary"
+                  }`}
+                >
+                  Code
+                </button>
+                <button
+                  onClick={() => setCodeSource("nostr")}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md cursor-pointer border-0 transition-colors ${
+                    codeSource === "nostr"
+                      ? "bg-accent text-white"
+                      : "bg-transparent text-text-secondary hover:text-text-primary"
+                  }`}
+                >
+                  Nostr Files
+                </button>
+              </div>
+            ) : null;
+          })()}
 
           {repo.isPersonalFork && repo.upstreamAddress && (
             <div className="flex items-center gap-2">
