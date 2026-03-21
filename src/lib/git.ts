@@ -7,7 +7,7 @@ const CORS_PROXY = "https://cors.isomorphic-git.org";
 
 let fs: LightningFS | null = null;
 
-function getFS(): LightningFS {
+export function getFS(): LightningFS {
   if (!fs) fs = new LightningFS("gitnostr");
   return fs;
 }

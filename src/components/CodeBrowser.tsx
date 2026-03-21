@@ -76,6 +76,20 @@ export default function CodeBrowser({ cloneUrls, repoId, repoPubkey, repoIdentif
       if (yes) {
         setCloned(true);
         loadTree();
+      } else if (blossomUrls.length > 0) {
+        // Auto-clone from Blossom
+        setCloning(true);
+        setProgress("Downloading from Blossom...");
+        try {
+          await cloneFromBlossom(blossomUrls[0], dir, (msg) => setProgress(msg));
+          if (cancelled) return;
+          setCloned(true);
+          await loadTree();
+        } catch (err: unknown) {
+          if (!cancelled) setError(err instanceof Error ? err.message : "Clone from Blossom failed");
+        } finally {
+          if (!cancelled) { setCloning(false); setProgress(""); }
+        }
       }
     });
     return () => { cancelled = true; };

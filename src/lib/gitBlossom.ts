@@ -4,15 +4,55 @@
  * and cloning from Blossom packfile URLs.
  */
 import git from "isomorphic-git";
-import LightningFS from "@isomorphic-git/lightning-fs";
+import type LightningFS from "@isomorphic-git/lightning-fs";
 import { uploadBlob, downloadBlob } from "./blossom";
+import { getFS } from "./git";
 import type { Signer } from "./nostr";
 
-let fs: LightningFS | null = null;
+export { getFS };
 
-export function getFS(): LightningFS {
-  if (!fs) fs = new LightningFS("gitnostr");
-  return fs;
+// ── Helper: read OIDs from a pack index (.idx) file ──
+
+async function readPackIndex(fsInstance: LightningFS, idxPath: string): Promise<string[]> {
+  const data = await fsInstance.promises.readFile(idxPath);
+  const buf = data instanceof Uint8Array ? data : new Uint8Array(data as ArrayBuffer);
+
+  // Pack index v2 format:
+  // - 4 bytes magic: \377tOc
+  // - 4 bytes version: 2
+  // - 256 * 4 bytes fanout table
+  // - N * 20 bytes OIDs (where N = fanout[255] = total objects)
+
+  const magic = (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];
+  const isV2 = magic === 0xff744f63; // \377tOc
+
+  if (!isV2) {
+    // v1 format or unknown — skip
+    return [];
+  }
+
+  // Read total object count from fanout[255]
+  const fanoutOffset = 8; // after magic + version
+  const totalObjects =
+    (buf[fanoutOffset + 255 * 4] << 24) |
+    (buf[fanoutOffset + 255 * 4 + 1] << 16) |
+    (buf[fanoutOffset + 255 * 4 + 2] << 8) |
+    buf[fanoutOffset + 255 * 4 + 3];
+
+  // OIDs start after the fanout table
+  const oidsOffset = fanoutOffset + 256 * 4;
+  const oids: string[] = [];
+
+  for (let i = 0; i < totalObjects; i++) {
+    const offset = oidsOffset + i * 20;
+    let hex = "";
+    for (let j = 0; j < 20; j++) {
+      hex += buf[offset + j].toString(16).padStart(2, "0");
+    }
+    oids.push(hex);
+  }
+
+  return oids;
 }
 
 // ── Helper: collect all reachable OIDs ──
@@ -20,32 +60,28 @@ export function getFS(): LightningFS {
 async function collectAllOids(fsInstance: LightningFS, dir: string): Promise<string[]> {
   const oids = new Set<string>();
 
-  try {
-    const commits = await git.log({ fs: fsInstance, dir, depth: 10000 });
-    for (const commit of commits) {
-      oids.add(commit.oid);
+  const commits = await git.log({ fs: fsInstance, dir, depth: 10000 });
+  if (commits.length === 0) {
+    throw new Error("No commits found in repository");
+  }
 
-      // Walk tree recursively
-      const walkTree = async (treeOid: string) => {
-        if (oids.has(treeOid)) return;
-        oids.add(treeOid);
-        try {
-          const { tree } = await git.readTree({ fs: fsInstance, dir, oid: treeOid });
-          for (const entry of tree) {
-            oids.add(entry.oid);
-            if (entry.type === "tree") {
-              await walkTree(entry.oid);
-            }
-          }
-        } catch {
-          // ignore unreadable objects
+  for (const commit of commits) {
+    oids.add(commit.oid);
+
+    // Walk tree recursively
+    const walkTree = async (treeOid: string) => {
+      if (oids.has(treeOid)) return;
+      oids.add(treeOid);
+      const { tree } = await git.readTree({ fs: fsInstance, dir, oid: treeOid });
+      for (const entry of tree) {
+        oids.add(entry.oid);
+        if (entry.type === "tree") {
+          await walkTree(entry.oid);
         }
-      };
+      }
+    };
 
-      await walkTree(commit.commit.tree);
-    }
-  } catch {
-    // empty repo or no commits
+    await walkTree(commit.commit.tree);
   }
 
   return [...oids];
@@ -75,7 +111,8 @@ export async function exportPackfile(dir: string): Promise<Uint8Array> {
 
 /**
  * Export the repo as a packfile and upload it to Blossom.
- * Returns the Blossom URL of the uploaded packfile.
+ * Returns the Blossom URL with the HEAD commit hash appended as a fragment.
+ * Format: https://blossom.primal.net/<sha256>#<commit-oid>
  */
 export async function pushToBlossom(
   signer: Signer,
@@ -86,11 +123,20 @@ export async function pushToBlossom(
   onProgress?.("Packing git objects...");
   const packfile = await exportPackfile(dir);
 
+  // Get the HEAD commit OID to store with the URL
+  const fsInstance = getFS();
+  let headOid = "";
+  try {
+    const commits = await git.log({ fs: fsInstance, dir, depth: 1 });
+    if (commits.length > 0) headOid = commits[0].oid;
+  } catch { /* no commits */ }
+
   onProgress?.(`Uploading packfile (${(packfile.length / 1024).toFixed(1)} KB)...`);
   const result = await uploadBlob(signer, packfile, server);
 
   onProgress?.("Upload complete!");
-  return result.url;
+  // Append HEAD commit OID as URL fragment so cloneFromBlossom can find it
+  return headOid ? `${result.url}#${headOid}` : result.url;
 }
 
 // ── Import & Clone ──
@@ -132,8 +178,31 @@ export async function cloneFromBlossom(
 ): Promise<void> {
   const fsInstance = getFS();
 
+  // Extract commit OID hint from URL fragment (e.g., https://...#commitOid)
+  let downloadUrl = url;
+  let hintCommitOid: string | null = null;
+  const hashIdx = url.indexOf("#");
+  if (hashIdx !== -1) {
+    hintCommitOid = url.slice(hashIdx + 1);
+    downloadUrl = url.slice(0, hashIdx);
+  }
+
   onProgress?.("Downloading packfile...");
-  const packData = await downloadBlob(url);
+  const packData = await downloadBlob(downloadUrl);
+
+  if (packData.length === 0) {
+    throw new Error("Downloaded packfile is empty");
+  }
+  onProgress?.(`Downloaded ${(packData.length / 1024).toFixed(1)} KB`);
+
+  // Clean any previous clone
+  try {
+    const existing = await fsInstance.promises.readdir(dir);
+    if (existing.length > 0) {
+      const { deleteClone } = await import("./git");
+      await deleteClone(dir);
+    }
+  } catch { /* dir doesn't exist, fine */ }
 
   onProgress?.("Initializing repository...");
   await initGitDir(fsInstance, dir);
@@ -149,57 +218,70 @@ export async function cloneFromBlossom(
     filepath: packPath,
   });
 
-  // Find available branches by checking refs
+  // Set up branches — packfile has objects but no refs
   onProgress?.("Setting up branches...");
-
-  // Try to resolve HEAD from the pack — look for common default branches
-  const defaultBranches = ["main", "master", "develop"];
   let checkedOut = false;
 
-  // List all commits to find the latest one
-  try {
-    // Read all refs from the pack index
-    const branches = await git.listBranches({ fs: fsInstance, dir });
-    if (branches.length > 0) {
-      await git.checkout({ fs: fsInstance, dir, ref: branches[0] });
+  // Method 1: Use commit OID hint from URL fragment
+  if (hintCommitOid) {
+    try {
+      await git.readObject({ fs: fsInstance, dir, oid: hintCommitOid });
+      onProgress?.(`Using commit ${hintCommitOid.slice(0, 7)}...`);
+      await fsInstance.promises.writeFile(
+        `${dir}/.git/refs/heads/main`,
+        hintCommitOid + "\n",
+      );
+      await git.checkout({ fs: fsInstance, dir, ref: "main" });
       checkedOut = true;
+    } catch {
+      onProgress?.("Hint commit not found, scanning pack...");
     }
-  } catch {
-    // no branches yet
   }
 
+  // Method 2: Parse pack index to find commits
   if (!checkedOut) {
-    // If no branches, try to find commits and create a branch from the latest
     try {
-      const commits = await git.log({ fs: fsInstance, dir, depth: 1 });
-      if (commits.length > 0) {
-        // Create main branch pointing to this commit
+      const packIdxPath = packPath.replace(".pack", ".idx");
+      const oids = await readPackIndex(fsInstance, `${dir}/${packIdxPath}`);
+      onProgress?.(`Scanning ${oids.length} objects for commits...`);
+
+      let latestCommitOid: string | null = null;
+      let latestTimestamp = 0;
+
+      for (const oid of oids) {
+        try {
+          const { type, object } = await git.readObject({ fs: fsInstance, dir, oid });
+          if (type === "commit") {
+            const text = new TextDecoder().decode(object as Uint8Array);
+            const match = text.match(/author .+ (\d+) [+-]\d+/);
+            const ts = match ? parseInt(match[1]) : 0;
+            if (ts > latestTimestamp) {
+              latestTimestamp = ts;
+              latestCommitOid = oid;
+            }
+          }
+        } catch { /* skip */ }
+      }
+
+      if (latestCommitOid) {
+        onProgress?.(`Found commit ${latestCommitOid.slice(0, 7)}, checking out...`);
         await fsInstance.promises.writeFile(
           `${dir}/.git/refs/heads/main`,
-          commits[0].oid + "\n",
+          latestCommitOid + "\n",
         );
         await git.checkout({ fs: fsInstance, dir, ref: "main" });
         checkedOut = true;
       }
-    } catch {
-      // Try alternative: walk packfile for commit objects
-      for (const branch of defaultBranches) {
-        try {
-          await git.checkout({ fs: fsInstance, dir, ref: branch });
-          checkedOut = true;
-          break;
-        } catch {
-          continue;
-        }
-      }
+    } catch (err) {
+      onProgress?.(`Pack scan failed: ${err}`);
     }
   }
 
-  if (!checkedOut) {
-    onProgress?.("Warning: could not checkout any branch");
+  if (checkedOut) {
+    onProgress?.("Clone complete!");
+  } else {
+    onProgress?.("Warning: could not find any commits in packfile");
   }
-
-  onProgress?.("Clone complete!");
 }
 
 // ── Init local repo ──
