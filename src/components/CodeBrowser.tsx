@@ -223,15 +223,7 @@ export default function CodeBrowser({ cloneUrls, repoId, repoPubkey, repoIdentif
       }
       setCloned(true);
       await loadTree();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Clone failed";
-      if (msg.includes("404")) {
-        setError(`Repository not found — the clone URL may be broken or the repository was deleted upstream.`);
-      } else if (msg.includes("CORS") || msg.includes("Failed to fetch")) {
-        setError(`Network error — the clone URL may be unreachable or blocked by CORS.`);
-      } else {
-        setError(msg);
-      }
+    } catch {
       onCloneFailed?.();
     } finally {
       setCloning(false);
