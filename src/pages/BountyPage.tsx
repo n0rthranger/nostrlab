@@ -4,7 +4,6 @@ import {
   pool,
   fetchProfiles,
   fetchBountyUpdates,
-  publishBountyClaim,
   publishBountyPayment,
   resolveLud16,
   requestZapInvoice,
@@ -12,6 +11,7 @@ import {
   timeAgo,
   repoAddress,
   signWith,
+  withTimeout,
   DEFAULT_RELAYS,
 } from "../lib/nostr";
 import type { LnurlPayInfo } from "../lib/nostr";
@@ -35,7 +35,6 @@ export default function BountyPage() {
 
   // Claim/pay state
   const [claimingId, setClaimingId] = useState<string | null>(null);
-  const [claimMessage, setClaimMessage] = useState("");
   const [payingId, setPayingId] = useState<string | null>(null);
   const [payInvoice, setPayInvoice] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -46,7 +45,7 @@ export default function BountyPage() {
     if (!addr) return;
     let cancelled = false;
 
-    pool.querySync(DEFAULT_RELAYS, { kinds: [BOUNTY], "#a": [addr] }).then(async (events) => {
+    withTimeout(pool.querySync(DEFAULT_RELAYS, { kinds: [BOUNTY], "#a": [addr] }), 10000, []).then(async (events) => {
       try {
         if (cancelled) return;
         const parsed: BountyEvent[] = events
@@ -127,28 +126,10 @@ export default function BountyPage() {
     }
   };
 
-  const handleClaim = async (bounty: BountyEvent) => {
-    if (!signer || !authPubkey) return;
-    setActionLoading(true);
-    try {
-      await publishBountyClaim(signer, {
-        bountyId: bounty.id,
-        bountyPubkey: bounty.pubkey,
-        repoAddress: bounty.repoAddress,
-        content: claimMessage || "I'd like to work on this bounty",
-      });
-      toast("Bounty claimed! The poster will be notified.", "success");
-      setBounties((prev) => prev.map((b) =>
-        b.id === bounty.id ? { ...b, status: "claimed" as const, claimedBy: authPubkey } : b
-      ));
-      setClaimingId(null);
-      setClaimMessage("");
-    } catch (err: unknown) {
-      toast(err instanceof Error ? err.message : "Failed to claim bounty", "error");
-    } finally {
-      setActionLoading(false);
-    }
-  };
+  const patchUrl = (b: BountyEvent) =>
+    `/repo/${repoPubkey}/${identifier}/patches/new?bounty=${b.id}&bountyPubkey=${b.pubkey}`;
+  const prUrl = (b: BountyEvent) =>
+    `/repo/${repoPubkey}/${identifier}/prs/new?bounty=${b.id}&bountyPubkey=${b.pubkey}`;
 
   const handlePay = async (bounty: BountyEvent) => {
     if (!signer || !bounty.claimedBy) return;
@@ -347,32 +328,37 @@ export default function BountyPage() {
                       )}
                     </div>
 
-                    {/* Claim form */}
+                    {/* Submit work form */}
                     {claimingId === b.id && (
-                      <div className="mt-3 flex gap-2 items-end">
-                        <div className="flex-1">
-                          <label className="text-[10px] text-text-muted block mb-1">Message to bounty poster</label>
-                          <input
-                            type="text"
-                            value={claimMessage}
-                            onChange={(e) => setClaimMessage(e.target.value)}
-                            placeholder="I'd like to work on this bounty"
-                            className="w-full bg-bg-primary border border-border rounded-md px-2.5 py-1.5 text-xs text-text-primary focus:outline-none focus:border-accent"
-                          />
+                      <div className="mt-3 p-3 bg-bg-primary border border-border rounded-lg">
+                        <div className="text-xs text-text-secondary font-medium mb-2">Submit your work to claim this bounty:</div>
+                        <div className="flex gap-2">
+                          <Link
+                            to={patchUrl(b)}
+                            className="btn btn-primary btn-sm no-underline hover:no-underline flex items-center gap-1.5"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                              <path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"/>
+                            </svg>
+                            Submit Patch
+                          </Link>
+                          <Link
+                            to={prUrl(b)}
+                            className="btn btn-sm no-underline hover:no-underline flex items-center gap-1.5"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                              <path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"/>
+                            </svg>
+                            Open PR
+                          </Link>
+                          <button
+                            onClick={() => setClaimingId(null)}
+                            className="btn btn-sm"
+                          >
+                            Cancel
+                          </button>
                         </div>
-                        <button
-                          onClick={() => handleClaim(b)}
-                          disabled={actionLoading}
-                          className="btn btn-primary btn-sm"
-                        >
-                          {actionLoading ? "..." : "Submit Claim"}
-                        </button>
-                        <button
-                          onClick={() => { setClaimingId(null); setClaimMessage(""); }}
-                          className="btn btn-sm"
-                        >
-                          Cancel
-                        </button>
+                        <p className="text-[10px] text-text-muted mt-2">Submitting a patch or PR will automatically claim this bounty and notify the poster.</p>
                       </div>
                     )}
 
@@ -414,7 +400,7 @@ export default function BountyPage() {
                         onClick={() => setClaimingId(b.id)}
                         className="btn btn-sm text-green"
                       >
-                        Claim
+                        Work on this
                       </button>
                     )}
                     {canPay && payingId !== b.id && (

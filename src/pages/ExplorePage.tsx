@@ -140,7 +140,7 @@ export default function ExplorePage() {
                 </div>
                 <h3 className="font-semibold text-sm mb-2 glitch-text">Censorship Resistant</h3>
                 <p className="text-xs text-text-secondary leading-relaxed">Your repos are announced to multiple relays. No single point of failure or control.</p>
-                <div className="mt-4 font-mono text-[10px] text-cyan opacity-30">// distributed mesh</div>
+                <div className="mt-4 font-mono text-[10px] text-cyan opacity-30">// multi-relay broadcast</div>
               </div>
               <div className="Box p-6 feature-card animate-hacker-fade-up stagger-7 rounded-xl">
                 <div className="w-10 h-10 rounded-lg bg-purple/10 border border-purple/20 flex items-center justify-center mb-4">

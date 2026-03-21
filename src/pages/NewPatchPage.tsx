@@ -1,12 +1,15 @@
 import { useState, useRef } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../components/Toast";
-import { publishPatch, repoAddress } from "../lib/nostr";
+import { publishPatch, publishBountyClaim, repoAddress } from "../lib/nostr";
 import MarkdownEditor from "../components/MarkdownEditor";
 
 export default function NewPatchPage() {
   const { pubkey: repoPubkey, identifier } = useParams();
+  const [searchParams] = useSearchParams();
+  const bountyId = searchParams.get("bounty") ?? undefined;
+  const bountyPubkey = searchParams.get("bountyPubkey") ?? undefined;
   const { pubkey, signer } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -69,14 +72,28 @@ export default function NewPatchPage() {
     setPublishing(true);
     setError("");
     try {
+      const addr = repoAddress(repoPubkey, identifier);
       const event = await publishPatch(signer, {
-        repoAddress: repoAddress(repoPubkey, identifier),
+        repoAddress: addr,
         repoPubkey,
         content: buildPatchContent(),
         commitId: commitId.trim() || undefined,
         parentCommitId: parentCommitId.trim() || undefined,
+        bountyId,
       });
-      toast("Patch submitted!", "success");
+      // Auto-claim the bounty if this patch is linked to one
+      if (bountyId && bountyPubkey) {
+        try {
+          await publishBountyClaim(signer, {
+            bountyId,
+            bountyPubkey,
+            repoAddress: addr,
+            content: `Submitted patch: ${subject.trim()}`,
+            patchOrPrId: event.id,
+          });
+        } catch { /* claim is best-effort */ }
+      }
+      toast(bountyId ? "Patch submitted & bounty claimed!" : "Patch submitted!", "success");
       navigate(`/repo/${repoPubkey}/${identifier}/patches/${event.id}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to publish patch");
@@ -96,6 +113,15 @@ export default function NewPatchPage() {
         </Link>
       </div>
       <h1 className="text-2xl font-semibold mb-6">Submit Patch</h1>
+
+      {bountyId && (
+        <div className="bg-orange/10 border border-orange/30 rounded-lg p-3 mb-6 flex items-center gap-2 text-sm">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" className="text-orange shrink-0">
+            <path d="M9.504 1.132a.75.75 0 0 1 .37.98L7.752 7h4.498a.75.75 0 0 1 .58 1.228l-6 7.25a.75.75 0 0 1-1.334-.58L7.248 9H2.75a.75.75 0 0 1-.58-1.228l6-7.25a.75.75 0 0 1 1.334.61Z" />
+          </svg>
+          <span className="text-orange">This patch will be linked to a bounty. Submitting will automatically claim the bounty.</span>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-5">
         {error && (

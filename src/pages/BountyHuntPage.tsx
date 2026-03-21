@@ -1,10 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Link } from "react-router-dom";
 import {
   pool,
   fetchProfiles,
   fetchBountyUpdates,
-  publishBountyClaim,
   publishBountyPayment,
   resolveLud16,
   requestZapInvoice,
@@ -13,6 +12,7 @@ import {
   repoAddress,
   signWith,
   DEFAULT_RELAYS,
+  withTimeout,
 } from "../lib/nostr";
 import type { LnurlPayInfo } from "../lib/nostr";
 import { BOUNTY, REPO_ANNOUNCEMENT } from "../types/nostr";
@@ -39,8 +39,11 @@ export default function BountyHuntPage() {
 
   // Create bounty form state
   const [showForm, setShowForm] = useState(false);
-  const [userRepos, setUserRepos] = useState<RepoAnnouncement[]>([]);
+  const [allRepos, setAllRepos] = useState<RepoAnnouncement[]>([]);
+  const [repoProfiles, setRepoProfiles] = useState<Map<string, UserProfile>>(new Map());
   const [selectedRepo, setSelectedRepo] = useState("");
+  const [repoSearch, setRepoSearch] = useState("");
+  const [repoDropdownOpen, setRepoDropdownOpen] = useState(false);
   const [newAmount, setNewAmount] = useState("");
   const [newContent, setNewContent] = useState("");
   const [creating, setCreating] = useState(false);
@@ -48,17 +51,34 @@ export default function BountyHuntPage() {
 
   // Claim/pay state
   const [claimingId, setClaimingId] = useState<string | null>(null);
-  const [claimMessage, setClaimMessage] = useState("");
   const [payingId, setPayingId] = useState<string | null>(null);
   const [payInvoice, setPayInvoice] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const repoDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close repo dropdown on outside click
+  useEffect(() => {
+    if (!repoDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (repoDropdownRef.current && !repoDropdownRef.current.contains(e.target as Node)) {
+        setRepoDropdownOpen(false);
+        setRepoSearch("");
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [repoDropdownOpen]);
 
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
       try {
-        const events = await pool.querySync(DEFAULT_RELAYS, { kinds: [BOUNTY], limit: 200 });
+        const events = await withTimeout(
+          pool.querySync(DEFAULT_RELAYS, { kinds: [BOUNTY], limit: 200 }),
+          10000,
+          [],
+        );
         if (cancelled) return;
 
         const parsed: EnrichedBounty[] = events
@@ -141,10 +161,14 @@ export default function BountyHuntPage() {
 
   const handleOpenForm = async () => {
     setShowForm(true);
-    if (userRepos.length > 0 || !authPubkey) return;
+    if (allRepos.length > 0) return;
     setLoadingRepos(true);
     try {
-      const events = await pool.querySync(DEFAULT_RELAYS, { kinds: [REPO_ANNOUNCEMENT], authors: [authPubkey] });
+      const events = await withTimeout(
+        pool.querySync(DEFAULT_RELAYS, { kinds: [REPO_ANNOUNCEMENT], limit: 200 }),
+        10000,
+        [],
+      );
       const repos: RepoAnnouncement[] = events
         .map((e) => {
           const name = e.tags.find((t) => t[0] === "name")?.[1] ?? e.tags.find((t) => t[0] === "d")?.[1] ?? "";
@@ -152,11 +176,29 @@ export default function BountyHuntPage() {
           return { id: e.id, pubkey: e.pubkey, identifier, name, description: "", cloneUrls: [], webUrls: [], tags: [], createdAt: e.created_at };
         })
         .filter((r) => r.name && r.identifier);
-      setUserRepos(repos);
-      if (repos.length > 0) setSelectedRepo(`${repos[0].pubkey}:${repos[0].identifier}`);
+      repos.sort((a, b) => a.name.localeCompare(b.name));
+      setAllRepos(repos);
+
+      // Fetch owner profiles
+      const ownerPubkeys = [...new Set(repos.map((r) => r.pubkey))];
+      if (ownerPubkeys.length > 0) {
+        const profs = await fetchProfiles(ownerPubkeys);
+        setRepoProfiles(profs);
+      }
     } catch { /* ignore */ }
     setLoadingRepos(false);
   };
+
+  const repoLabel = (r: RepoAnnouncement) => {
+    const owner = repoProfiles.get(r.pubkey)?.name ?? shortenKey(r.pubkey);
+    return `${owner} / ${r.name}`;
+  };
+
+  const selectedRepoObj = allRepos.find((r) => `${r.pubkey}:${r.identifier}` === selectedRepo);
+
+  const filteredRepos = repoSearch
+    ? allRepos.filter((r) => repoLabel(r).toLowerCase().includes(repoSearch.toLowerCase()))
+    : allRepos;
 
   const handleCreate = async () => {
     if (!signer || !selectedRepo || !newAmount) return;
@@ -178,7 +220,7 @@ export default function BountyHuntPage() {
       await Promise.allSettled(pool.publish(DEFAULT_RELAYS, event));
       toast("Bounty created!", "success");
 
-      const repo = userRepos.find((r) => r.pubkey === repoPubkey && r.identifier === repoIdentifier);
+      const repo = allRepos.find((r) => r.pubkey === repoPubkey && r.identifier === repoIdentifier);
       const newBounty: EnrichedBounty = {
         id: event.id,
         pubkey: authPubkey!,
@@ -202,28 +244,10 @@ export default function BountyHuntPage() {
     }
   };
 
-  const handleClaim = async (bounty: EnrichedBounty) => {
-    if (!signer || !authPubkey) return;
-    setActionLoading(true);
-    try {
-      await publishBountyClaim(signer, {
-        bountyId: bounty.id,
-        bountyPubkey: bounty.pubkey,
-        repoAddress: bounty.repoAddress,
-        content: claimMessage || "I'd like to work on this bounty",
-      });
-      toast("Bounty claimed! The poster will be notified.", "success");
-      setBounties((prev) => prev.map((b) =>
-        b.id === bounty.id ? { ...b, status: "claimed" as const, claimedBy: authPubkey } : b
-      ));
-      setClaimingId(null);
-      setClaimMessage("");
-    } catch (err: unknown) {
-      toast(err instanceof Error ? err.message : "Failed to claim bounty", "error");
-    } finally {
-      setActionLoading(false);
-    }
-  };
+  const patchUrl = (b: EnrichedBounty) =>
+    `/repo/${b.repoPubkey}/${b.repoIdentifier}/patches/new?bounty=${b.id}&bountyPubkey=${b.pubkey}`;
+  const prUrl = (b: EnrichedBounty) =>
+    `/repo/${b.repoPubkey}/${b.repoIdentifier}/prs/new?bounty=${b.id}&bountyPubkey=${b.pubkey}`;
 
   const handlePay = async (bounty: EnrichedBounty) => {
     if (!signer || !bounty.claimedBy) return;
@@ -368,24 +392,79 @@ export default function BountyHuntPage() {
             <div>
               <label className="text-xs text-text-muted block mb-1">Repository</label>
               {loadingRepos ? (
-                <div className="text-sm text-text-muted py-2">Loading your repos...</div>
-              ) : userRepos.length === 0 ? (
                 <div className="text-sm text-text-muted py-2">
-                  You don't have any repositories yet.{" "}
+                  <span className="inline-block w-3 h-3 border-2 border-accent border-t-transparent rounded-full animate-spin mr-2 align-middle" />
+                  Loading repositories...
+                </div>
+              ) : allRepos.length === 0 ? (
+                <div className="text-sm text-text-muted py-2">
+                  No repositories found on the network.{" "}
                   <Link to="/new" className="text-accent hover:underline no-underline">Create one first</Link>
                 </div>
               ) : (
-                <select
-                  value={selectedRepo}
-                  onChange={(e) => setSelectedRepo(e.target.value)}
-                  className="w-full bg-bg-primary border border-border rounded-lg px-3 py-2 text-sm text-text-primary cursor-pointer focus:outline-none focus:border-accent"
-                >
-                  {userRepos.map((r) => (
-                    <option key={`${r.pubkey}:${r.identifier}`} value={`${r.pubkey}:${r.identifier}`}>
-                      {r.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative" ref={repoDropdownRef}>
+                  <div
+                    onClick={() => setRepoDropdownOpen(!repoDropdownOpen)}
+                    className="w-full bg-bg-primary border border-border rounded-lg px-3 py-2 text-sm text-text-primary cursor-pointer focus:outline-none hover:border-accent/50 flex items-center justify-between"
+                  >
+                    <span className={selectedRepoObj ? "text-text-primary" : "text-text-muted"}>
+                      {selectedRepoObj ? repoLabel(selectedRepoObj) : "Select a repository..."}
+                    </span>
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" className={`text-text-muted transition-transform ${repoDropdownOpen ? "rotate-180" : ""}`}>
+                      <path d="M4.427 7.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 7H4.604a.25.25 0 00-.177.427z"/>
+                    </svg>
+                  </div>
+                  {repoDropdownOpen && (
+                    <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-bg-secondary border border-border rounded-lg shadow-lg max-h-64 overflow-hidden flex flex-col">
+                      <div className="p-2 border-b border-border">
+                        <input
+                          type="text"
+                          value={repoSearch}
+                          onChange={(e) => setRepoSearch(e.target.value)}
+                          placeholder="Search repositories..."
+                          autoFocus
+                          className="w-full bg-bg-primary border border-border rounded-md px-2.5 py-1.5 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
+                        />
+                      </div>
+                      <div className="overflow-y-auto">
+                        {filteredRepos.length === 0 ? (
+                          <div className="px-3 py-4 text-xs text-text-muted text-center">No matching repos</div>
+                        ) : (
+                          filteredRepos.map((r) => {
+                            const key = `${r.pubkey}:${r.identifier}`;
+                            const isSelected = key === selectedRepo;
+                            const owner = repoProfiles.get(r.pubkey)?.name ?? shortenKey(r.pubkey);
+                            return (
+                              <div
+                                key={key}
+                                onClick={() => {
+                                  setSelectedRepo(key);
+                                  setRepoDropdownOpen(false);
+                                  setRepoSearch("");
+                                }}
+                                className={`px-3 py-2 cursor-pointer text-sm hover:bg-bg-tertiary/50 flex items-center gap-2 ${isSelected ? "bg-accent/10" : ""}`}
+                              >
+                                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" className="text-text-muted shrink-0">
+                                  <path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8Z"/>
+                                </svg>
+                                <div className="min-w-0">
+                                  <span className="text-text-muted">{owner}</span>
+                                  <span className="text-text-muted mx-1">/</span>
+                                  <span className="text-text-primary font-medium">{r.name}</span>
+                                </div>
+                                {isSelected && (
+                                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" className="text-accent ml-auto shrink-0">
+                                    <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/>
+                                  </svg>
+                                )}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
             <div className="flex gap-3">
@@ -413,7 +492,7 @@ export default function BountyHuntPage() {
             </div>
             <button
               onClick={handleCreate}
-              disabled={creating || !newAmount || !selectedRepo || userRepos.length === 0}
+              disabled={creating || !newAmount || !selectedRepo || allRepos.length === 0}
               className="btn btn-primary"
             >
               {creating ? "Creating..." : "Post Bounty"}
@@ -528,32 +607,37 @@ export default function BountyHuntPage() {
                       <span>{timeAgo(b.createdAt)}</span>
                     </div>
 
-                    {/* Claim form */}
+                    {/* Submit work form */}
                     {claimingId === b.id && (
-                      <div className="mt-3 flex gap-2 items-end">
-                        <div className="flex-1">
-                          <label className="text-[10px] text-text-muted block mb-1">Message to bounty poster</label>
-                          <input
-                            type="text"
-                            value={claimMessage}
-                            onChange={(e) => setClaimMessage(e.target.value)}
-                            placeholder="I'd like to work on this bounty"
-                            className="w-full bg-bg-primary border border-border rounded-md px-2.5 py-1.5 text-xs text-text-primary focus:outline-none focus:border-accent"
-                          />
+                      <div className="mt-3 p-3 bg-bg-primary border border-border rounded-lg">
+                        <div className="text-xs text-text-secondary font-medium mb-2">Submit your work to claim this bounty:</div>
+                        <div className="flex gap-2">
+                          <Link
+                            to={patchUrl(b)}
+                            className="btn btn-primary btn-sm no-underline hover:no-underline flex items-center gap-1.5"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                              <path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"/>
+                            </svg>
+                            Submit Patch
+                          </Link>
+                          <Link
+                            to={prUrl(b)}
+                            className="btn btn-sm no-underline hover:no-underline flex items-center gap-1.5"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                              <path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"/>
+                            </svg>
+                            Open PR
+                          </Link>
+                          <button
+                            onClick={() => setClaimingId(null)}
+                            className="btn btn-sm"
+                          >
+                            Cancel
+                          </button>
                         </div>
-                        <button
-                          onClick={() => handleClaim(b)}
-                          disabled={actionLoading}
-                          className="btn btn-primary btn-sm"
-                        >
-                          {actionLoading ? "..." : "Submit Claim"}
-                        </button>
-                        <button
-                          onClick={() => { setClaimingId(null); setClaimMessage(""); }}
-                          className="btn btn-sm"
-                        >
-                          Cancel
-                        </button>
+                        <p className="text-[10px] text-text-muted mt-2">Submitting a patch or PR will automatically claim this bounty and notify the poster.</p>
                       </div>
                     )}
 
@@ -595,7 +679,7 @@ export default function BountyHuntPage() {
                         onClick={() => setClaimingId(b.id)}
                         className="btn btn-sm text-green"
                       >
-                        Claim
+                        Work on this
                       </button>
                     )}
                     {canPay && payingId !== b.id && (

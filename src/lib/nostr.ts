@@ -45,6 +45,7 @@ import {
   ZAP_REQUEST,
   REPO_FILE_BLOB,
   DELETION,
+  BOUNTY,
 } from "../types/nostr";
 
 export const DEFAULT_RELAYS = [
@@ -458,6 +459,7 @@ export async function publishPatch(
     content: string;
     commitId?: string;
     parentCommitId?: string;
+    bountyId?: string;
   },
   relays: string[] = DEFAULT_RELAYS
 ): Promise<Event> {
@@ -468,6 +470,7 @@ export async function publishPatch(
   ];
   if (patch.commitId) tags.push(["commit", patch.commitId]);
   if (patch.parentCommitId) tags.push(["parent-commit", patch.parentCommitId]);
+  if (patch.bountyId) tags.push(["bounty", patch.bountyId]);
   const event = await signWith(sk,
     { kind: PATCH, content: patch.content, tags, created_at: Math.floor(Date.now() / 1000) }
   );
@@ -487,6 +490,7 @@ export async function publishPullRequest(
     commitId?: string;
     mergeBase?: string;
     labels?: string[];
+    bountyId?: string;
   },
   relays: string[] = DEFAULT_RELAYS
 ): Promise<Event> {
@@ -500,6 +504,7 @@ export async function publishPullRequest(
   if (pr.commitId) tags.push(["c", pr.commitId]);
   if (pr.mergeBase) tags.push(["merge-base", pr.mergeBase]);
   for (const l of pr.labels ?? []) tags.push(["t", l]);
+  if (pr.bountyId) tags.push(["bounty", pr.bountyId]);
   const event = await signWith(sk,
     { kind: PULL_REQUEST, content: pr.content, tags, created_at: Math.floor(Date.now() / 1000) }
   );
@@ -514,18 +519,21 @@ export async function publishBountyClaim(
     bountyPubkey: string;
     repoAddress: string;
     content: string;
+    patchOrPrId?: string;
   },
   relays: string[] = DEFAULT_RELAYS
 ): Promise<Event> {
+  const tags: string[][] = [
+    ["e", params.bountyId, "", "reply"],
+    ["a", params.repoAddress],
+    ["p", params.bountyPubkey],
+    ["status", "claimed"],
+  ];
+  if (params.patchOrPrId) tags.push(["work", params.patchOrPrId]);
   const event = await signWith(sk, {
     kind: BOUNTY,
     content: params.content,
-    tags: [
-      ["e", params.bountyId, "", "reply"],
-      ["a", params.repoAddress],
-      ["p", params.bountyPubkey],
-      ["status", "claimed"],
-    ],
+    tags,
     created_at: Math.floor(Date.now() / 1000),
   });
   await Promise.allSettled(pool.publish(relays, event));
@@ -557,12 +565,23 @@ export async function publishBountyPayment(
   return event;
 }
 
+export function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
 export async function fetchBountyUpdates(
   bountyIds: string[],
   relays: string[] = DEFAULT_RELAYS
 ): Promise<Map<string, { status: "claimed" | "paid"; claimedBy?: string }>> {
   if (bountyIds.length === 0) return new Map();
-  const events = await pool.querySync(relays, { kinds: [BOUNTY], "#e": bountyIds });
+  const events = await withTimeout(
+    pool.querySync(relays, { kinds: [BOUNTY], "#e": bountyIds }),
+    8000,
+    [],
+  );
   const result = new Map<string, { status: "claimed" | "paid"; claimedBy?: string }>();
 
   // Process events in chronological order so latest status wins

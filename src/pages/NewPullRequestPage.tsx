@@ -1,14 +1,17 @@
 import { useState } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../components/Toast";
-import { publishPullRequest, repoAddress } from "../lib/nostr";
+import { publishPullRequest, publishBountyClaim, repoAddress } from "../lib/nostr";
 import MarkdownEditor from "../components/MarkdownEditor";
 
 const LABEL_PRESETS = ["bugfix", "feature", "refactor", "docs", "tests", "breaking-change"];
 
 export default function NewPullRequestPage() {
   const { pubkey: repoPubkey, identifier } = useParams();
+  const [searchParams] = useSearchParams();
+  const bountyId = searchParams.get("bounty") ?? undefined;
+  const bountyPubkey = searchParams.get("bountyPubkey") ?? undefined;
   const { pubkey, signer } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -56,8 +59,9 @@ export default function NewPullRequestPage() {
     setPublishing(true);
     setError("");
     try {
+      const addr = repoAddress(repoPubkey, identifier);
       const event = await publishPullRequest(signer, {
-        repoAddress: repoAddress(repoPubkey, identifier),
+        repoAddress: addr,
         repoPubkey,
         subject: subject.trim(),
         content: description.trim(),
@@ -66,8 +70,21 @@ export default function NewPullRequestPage() {
         commitId: commitId.trim() || undefined,
         mergeBase: mergeBase.trim() || undefined,
         labels: selectedLabels.length > 0 ? selectedLabels : undefined,
+        bountyId,
       });
-      toast("Pull request opened!", "success");
+      // Auto-claim the bounty if this PR is linked to one
+      if (bountyId && bountyPubkey) {
+        try {
+          await publishBountyClaim(signer, {
+            bountyId,
+            bountyPubkey,
+            repoAddress: addr,
+            content: `Opened PR: ${subject.trim()}`,
+            patchOrPrId: event.id,
+          });
+        } catch { /* claim is best-effort */ }
+      }
+      toast(bountyId ? "Pull request opened & bounty claimed!" : "Pull request opened!", "success");
       navigate(`/repo/${repoPubkey}/${identifier}/prs/${event.id}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to publish pull request");
@@ -87,6 +104,15 @@ export default function NewPullRequestPage() {
         </Link>
       </div>
       <h1 className="text-2xl font-semibold mb-6">Open Pull Request</h1>
+
+      {bountyId && (
+        <div className="bg-orange/10 border border-orange/30 rounded-lg p-3 mb-6 flex items-center gap-2 text-sm">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" className="text-orange shrink-0">
+            <path d="M9.504 1.132a.75.75 0 0 1 .37.98L7.752 7h4.498a.75.75 0 0 1 .58 1.228l-6 7.25a.75.75 0 0 1-1.334-.58L7.248 9H2.75a.75.75 0 0 1-.58-1.228l6-7.25a.75.75 0 0 1 1.334.61Z" />
+          </svg>
+          <span className="text-orange">This PR will be linked to a bounty. Submitting will automatically claim the bounty.</span>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-5">
         {error && (
