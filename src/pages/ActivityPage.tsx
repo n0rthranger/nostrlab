@@ -4,10 +4,10 @@ import { useRelays } from "../hooks/useRelays";
 import { useAuth } from "../hooks/useAuth";
 import { fetchProfiles, shortenKey, timeAgo, parseRepoAddress, pool } from "../lib/nostr";
 import type { UserProfile } from "../types/nostr";
-import { ISSUE, PATCH, PULL_REQUEST, COMMENT } from "../types/nostr";
+import { ISSUE, PATCH, PULL_REQUEST, COMMENT, REPO_ANNOUNCEMENT, REPO_STATE } from "../types/nostr";
 import type { Event } from "nostr-tools";
 
-type FilterTab = "all" | "issues" | "patches" | "prs" | "comments";
+type FilterTab = "all" | "pushes" | "issues" | "patches" | "prs" | "comments";
 
 interface ActivityItem {
   id: string;
@@ -31,6 +31,9 @@ function kindIcon(kind: number) {
       return <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" className="text-purple shrink-0"><path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"/></svg>;
     case COMMENT:
       return <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" className="text-accent shrink-0"><path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l-2.573 2.573A1.458 1.458 0 0 1 4 13.543V12H2.75A1.75 1.75 0 0 1 1 10.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h4.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>;
+    case REPO_ANNOUNCEMENT:
+    case REPO_STATE:
+      return <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" className="text-accent shrink-0"><path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8ZM5 12.25a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 .25.25v3.25a.25.25 0 0 1-.4.2l-1.45-1.087a.249.249 0 0 0-.3 0L5.4 15.7a.25.25 0 0 1-.4-.2Z"/></svg>;
     default:
       return null;
   }
@@ -42,6 +45,8 @@ function kindLabel(kind: number): string {
     case PATCH: return "submitted a patch";
     case PULL_REQUEST: return "opened a pull request";
     case COMMENT: return "commented";
+    case REPO_ANNOUNCEMENT: return "created a repository";
+    case REPO_STATE: return "pushed to";
     default: return "acted";
   }
 }
@@ -52,12 +57,19 @@ function kindNoun(kind: number): string {
     case PATCH: return "Patch";
     case PULL_REQUEST: return "Pull Request";
     case COMMENT: return "Comment";
+    case REPO_ANNOUNCEMENT: return "Repository";
+    case REPO_STATE: return "Push";
     default: return "Event";
   }
 }
 
 
 function getItemLink(item: ActivityItem): string {
+  // For repo state (pushes), link to the repo page
+  if ((item.kind === REPO_STATE || item.kind === REPO_ANNOUNCEMENT) && item.repoAddress) {
+    const parsed = parseRepoAddress(item.repoAddress);
+    if (parsed) return `/repo/${parsed.pubkey}/${parsed.identifier}`;
+  }
   // For comments, link to the root event thread so context is visible
   if (item.kind === COMMENT && item.rootEventId) {
     return `/event/${item.rootEventId}`;
@@ -68,6 +80,7 @@ function getItemLink(item: ActivityItem): string {
 
 const FILTER_TABS: { id: FilterTab; label: string; kinds: number[] | null }[] = [
   { id: "all", label: "All activity", kinds: null },
+  { id: "pushes", label: "Pushes", kinds: [REPO_ANNOUNCEMENT, REPO_STATE] },
   { id: "issues", label: "Issues", kinds: [ISSUE] },
   { id: "patches", label: "Patches", kinds: [PATCH] },
   { id: "prs", label: "Pull Requests", kinds: [PULL_REQUEST] },
@@ -88,17 +101,29 @@ export default function ActivityPage() {
       setLoading(true);
 
       const since = Math.floor(Date.now() / 1000) - 7 * 86400;
-      const events: Event[] = await pool.querySync(globalRelays, {
-        kinds: [ISSUE, PATCH, PULL_REQUEST, COMMENT],
-        since,
-        limit: 100,
-      });
+
+      // Query code activity events and repo state events in parallel
+      const [codeEvents, repoStateEvents] = await Promise.all([
+        pool.querySync(globalRelays, {
+          kinds: [ISSUE, PATCH, PULL_REQUEST, COMMENT],
+          since,
+          limit: 100,
+        }),
+        pool.querySync(globalRelays, {
+          kinds: [REPO_STATE],
+          since,
+          limit: 50,
+        }),
+      ]);
       if (cancelled) return;
+
+      const events: Event[] = [...codeEvents, ...repoStateEvents];
 
       // Filter to only code-related events
       const codeRelated = events.filter((e) => {
-        // Issues, patches, PRs are always code-related
+        // Issues, patches, PRs, repo state are always code-related
         if (e.kind === ISSUE || e.kind === PATCH || e.kind === PULL_REQUEST) return true;
+        if (e.kind === REPO_STATE) return true;
         // Comments (kind 1111) are only relevant if they reference a repo (30617:)
         // or reply to a code event (issue/patch/PR kind)
         if (e.kind === COMMENT) {
@@ -115,7 +140,7 @@ export default function ActivityPage() {
         const subjectTag = e.tags.find((t) => t[0] === "subject");
         // Try multiple `a` tags — pick the one that looks like a repo address (30617:...)
         const aTags = e.tags.filter((t) => t[0] === "a").map((t) => t[1]);
-        const repoAddr = aTags.find((a) => a?.startsWith("30617:")) ?? aTags[0];
+        let repoAddr = aTags.find((a) => a?.startsWith("30617:")) ?? aTags[0];
         // For comments: get root event ID and kind to link back to parent
         // NIP-22 uses uppercase E/K tags for root
         const rootETag = e.tags.find((t) => t[0] === "E");
@@ -131,6 +156,23 @@ export default function ActivityPage() {
             subject = subjectLine.replace("Subject: ", "").replace(/\[PATCH[^\]]*\]\s*/, "");
           }
         }
+
+        // For repo state events (pushes): extract repo identifier from d tag
+        if (e.kind === REPO_STATE) {
+          const dTag = e.tags.find((t) => t[0] === "d");
+          if (dTag?.[1]) {
+            repoAddr = `30617:${e.pubkey}:${dTag[1]}`;
+          }
+          // Extract branch info: HEAD tag has ["HEAD", "refs/heads/main"]
+          // Ref tags are like ["refs/heads/main", "<commit-oid>"]
+          const headTag = e.tags.find((t) => t[0] === "HEAD");
+          const headRef = headTag?.[1] || "";
+          const branch = headRef.replace("refs/heads/", "") || "main";
+          const refTag = e.tags.find((t) => t[0]?.startsWith("refs/heads/"));
+          const commitOid = refTag?.[1]?.slice(0, 7) || "";
+          subject = `Pushed to ${branch}${commitOid ? ` (${commitOid})` : ""}`;
+        }
+
         return {
           id: e.id,
           kind: e.kind,
@@ -182,6 +224,7 @@ export default function ActivityPage() {
   // Counts for filter tabs
   const counts: Record<FilterTab, number> = {
     all: items.length,
+    pushes: items.filter((i) => i.kind === REPO_STATE || i.kind === REPO_ANNOUNCEMENT).length,
     issues: items.filter((i) => i.kind === ISSUE).length,
     patches: items.filter((i) => i.kind === PATCH).length,
     prs: items.filter((i) => i.kind === PULL_REQUEST).length,
