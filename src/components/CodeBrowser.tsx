@@ -100,6 +100,15 @@ export default function CodeBrowser({ cloneUrls, repoId, repoPubkey, repoIdentif
           await deleteClone(dir);
           await cloneFromBlossomUrl(blossomUrls[0], dir, cancelled);
         } else {
+          // Verify the clone has files — if empty, re-clone
+          try {
+            const tree = await listFiles(dir);
+            if (tree.length === 0 && blossomUrls.length > 0) {
+              await deleteClone(dir);
+              await cloneFromBlossomUrl(blossomUrls[0], dir, cancelled);
+              return;
+            }
+          } catch { /* proceed with loadTree */ }
           setCloned(true);
           loadTree();
         }
