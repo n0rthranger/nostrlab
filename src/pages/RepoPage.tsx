@@ -91,8 +91,8 @@ export default function RepoPage() {
       setRepoState(state);
       // Default to git if HTTP clone URLs exist, otherwise nostr files
       if (repo) {
-        const hasHttp = repo.cloneUrls.some((u: string) => /^https?:\/\//i.test(u));
-        setCodeSource(hasHttp ? "git" : "nostr");
+        const hasCloneUrl = repo.cloneUrls.some((u: string) => /^https?:\/\//i.test(u));
+        setCodeSource(hasCloneUrl ? "git" : "nostr");
       }
       setIssues(issues);
       setPatches(patches);
@@ -381,7 +381,7 @@ export default function RepoPage() {
           <RepoRefs repoState={repoState} />
 
           {/* Source toggle — only show when both options are available */}
-          {repo.cloneUrls.some((u) => /^https?:\/\//i.test(u)) && (
+          {repo.cloneUrls.length > 0 && (
             <div className="flex items-center gap-1 bg-bg-tertiary rounded-lg p-1 w-fit">
               <button
                 onClick={() => setCodeSource("git")}

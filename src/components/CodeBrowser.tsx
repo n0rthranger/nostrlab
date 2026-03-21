@@ -11,6 +11,8 @@ import {
   isCloned,
   deleteClone,
 } from "../lib/git";
+import { cloneFromBlossom } from "../lib/gitBlossom";
+import { isBlossomUrl } from "../lib/blossom";
 import { downloadZipFromEntries } from "../lib/zip";
 import type { FileEntry } from "../types/nostr";
 import FileTree from "./FileTree";
@@ -28,9 +30,10 @@ interface Props {
 
 export default function CodeBrowser({ cloneUrls, repoId }: Props) {
   const dir = `/${repoId}`;
-  // isomorphic-git only supports HTTP(S) URLs
-  const httpUrls = cloneUrls.filter((u) => /^https?:\/\//i.test(u));
-  const sshOnlyUrls = cloneUrls.filter((u) => !httpUrls.includes(u));
+  // Categorize URLs
+  const blossomUrls = cloneUrls.filter((u) => isBlossomUrl(u));
+  const httpUrls = cloneUrls.filter((u) => /^https?:\/\//i.test(u) && !isBlossomUrl(u));
+  const canBrowse = blossomUrls.length > 0 || httpUrls.length > 0;
   const [cloned, setCloned] = useState(false);
   const [cloning, setCloning] = useState(false);
   const [progress, setProgress] = useState("");
@@ -99,17 +102,23 @@ export default function CodeBrowser({ cloneUrls, repoId }: Props) {
   };
 
   const handleClone = async () => {
-    if (httpUrls.length === 0) {
-      setError("No HTTP(S) clone URL available — browser cloning requires an HTTP(S) URL");
+    if (!canBrowse) {
+      setError("No browsable clone URL available");
       return;
     }
     setCloning(true);
     setError("");
     setProgress("Starting clone...");
     try {
-      await cloneRepo(httpUrls[0], dir, (phase, loaded, total) => {
-        setProgress(`${phase}: ${loaded}${total ? `/${total}` : ""}`);
-      });
+      if (blossomUrls.length > 0) {
+        // Clone from Blossom packfile
+        await cloneFromBlossom(blossomUrls[0], dir, (msg) => setProgress(msg));
+      } else {
+        // Fall back to HTTP git clone
+        await cloneRepo(httpUrls[0], dir, (phase, loaded, total) => {
+          setProgress(`${phase}: ${loaded}${total ? `/${total}` : ""}`);
+        });
+      }
       setCloned(true);
       await loadTree();
     } catch (err: unknown) {
@@ -192,7 +201,7 @@ export default function CodeBrowser({ cloneUrls, repoId }: Props) {
                 </div>
               </div>
             )}
-            {httpUrls.length > 0 && (
+            {canBrowse && (
               <button
                 onClick={handleClone}
                 disabled={cloning}
@@ -201,9 +210,9 @@ export default function CodeBrowser({ cloneUrls, repoId }: Props) {
                 {cloning ? "Cloning..." : "Browse in browser"}
               </button>
             )}
-            {httpUrls.length === 0 && (
+            {!canBrowse && (
               <p className="text-xs text-text-muted mt-2">
-                Browser cloning requires an HTTP(S) URL. Use the clone commands above.
+                Browser cloning requires an HTTP(S) or Blossom URL. Use the clone commands above.
               </p>
             )}
           </>

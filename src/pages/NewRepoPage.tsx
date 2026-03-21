@@ -4,6 +4,7 @@ import { useAuth } from "../hooks/useAuth";
 import { useRelays } from "../hooks/useRelays";
 import { useToast } from "../components/Toast";
 import { publishRepo, DEFAULT_RELAYS, fetchProfiles, shortenKey } from "../lib/nostr";
+import { initLocalRepo, pushToBlossom } from "../lib/gitBlossom";
 import type { UserProfile } from "../types/nostr";
 
 const RANDOM_NAMES = [
@@ -50,6 +51,7 @@ export default function NewRepoPage() {
   const [gitignore, setGitignore] = useState("None");
   const [license, setLicense] = useState("");
   const [publishing, setPublishing] = useState(false);
+  const [publishStatus, setPublishStatus] = useState("");
   const [error, setError] = useState("");
   const [profile, setProfile] = useState<UserProfile | null>(null);
 
@@ -100,11 +102,38 @@ export default function NewRepoPage() {
     if (visibility === "unlisted") repoTags.push("unlisted");
 
     try {
+      const cloneUrls: string[] = cloneUrl.trim() ? [cloneUrl.trim()] : [];
+      const needsInit = addReadme || gitignore !== "None" || license;
+
+      // Initialize git repo in browser and push to Blossom if initializing with files
+      if (needsInit) {
+        const dir = `/${pubkey}-${identifier}`;
+        const authorName = profile?.displayName || profile?.name || shortenKey(pubkey);
+
+        setPublishStatus("Initializing repository...");
+        await initLocalRepo(dir, {
+          name: name.trim(),
+          description: description.trim(),
+          addReadme,
+          license: license || undefined,
+          gitignore: gitignore !== "None" ? gitignore : undefined,
+          authorName,
+          authorEmail: `${shortenKey(pubkey)}@nostr`,
+        });
+
+        setPublishStatus("Uploading to Blossom...");
+        const blossomUrl = await pushToBlossom(signer, dir, undefined, (msg) =>
+          setPublishStatus(msg),
+        );
+        cloneUrls.push(blossomUrl);
+      }
+
+      setPublishStatus("Publishing to Nostr...");
       await publishRepo(signer, {
         identifier,
         name: name.trim(),
         description: description.trim(),
-        cloneUrls: cloneUrl.trim() ? [cloneUrl.trim()] : [],
+        cloneUrls,
         webUrls: webUrl.trim() ? [webUrl.trim()] : [],
         relays: DEFAULT_RELAYS,
         tags: repoTags,
@@ -115,6 +144,7 @@ export default function NewRepoPage() {
       setError(err instanceof Error ? err.message : "Failed to publish");
     } finally {
       setPublishing(false);
+      setPublishStatus("");
     }
   };
 
@@ -411,7 +441,7 @@ export default function NewRepoPage() {
             {publishing ? (
               <>
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Creating repository...
+                {publishStatus || "Creating repository..."}
               </>
             ) : (
               "Create repository"
