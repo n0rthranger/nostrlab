@@ -45,7 +45,7 @@ import CIStatusBadge from "../components/CIStatusBadge";
 import ForkDiffView from "../components/ForkDiffView";
 import SponsorTab from "../components/SponsorTab";
 
-type Tab = "code" | "issues" | "patches" | "prs" | "releases" | "discussions" | "bounties" | "boards" | "insights" | "changelog" | "sponsor";
+type Tab = "code" | "issues" | "patches" | "prs" | "releases" | "discussions" | "bounties" | "sponsor";
 
 export default function RepoPage() {
   const { pubkey, identifier } = useParams<{ pubkey: string; identifier: string }>();
@@ -258,21 +258,6 @@ export default function RepoPage() {
       id: "bounties",
       label: "Bounties",
       icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>,
-    },
-    {
-      id: "boards",
-      label: "Boards",
-      icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1.75 0h12.5C15.216 0 16 .784 16 1.75v12.5A1.75 1.75 0 0 1 14.25 16H1.75A1.75 1.75 0 0 1 0 14.25V1.75C0 .784.784 0 1.75 0ZM1.5 1.75v12.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25V1.75a.25.25 0 0 0-.25-.25H1.75a.25.25 0 0 0-.25.25ZM11.75 3a.75.75 0 0 1 .75.75v7.5a.75.75 0 0 1-1.5 0v-7.5a.75.75 0 0 1 .75-.75Zm-8.25.75a.75.75 0 0 1 1.5 0v5.5a.75.75 0 0 1-1.5 0ZM8 3a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 3Z"/></svg>,
-    },
-    {
-      id: "insights",
-      label: "Insights",
-      icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 1.75V13.5h13.75a.75.75 0 0 1 0 1.5H.75a.75.75 0 0 1-.75-.75V1.75a.75.75 0 0 1 1.5 0Zm14.28 2.53-5.25 5.25a.75.75 0 0 1-1.06 0L7 7.06 4.28 9.78a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042l3.25-3.25a.75.75 0 0 1 1.06 0L10 7.94l4.72-4.72a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042Z"/></svg>,
-    },
-    {
-      id: "changelog",
-      label: "Changelog",
-      icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.75C1 1.784 1.784 1 2.75 1h3a.75.75 0 0 1 0 1.5h-3a.25.25 0 0 0-.25.25v10.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-3a.75.75 0 0 1 1.5 0v3A1.75 1.75 0 0 1 13.25 15H2.75A1.75 1.75 0 0 1 1 13.25Zm11.06-4.72a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042L7.56 4.47h2.69a.75.75 0 0 1 0 1.5H5.75a.75.75 0 0 1-.75-.75V.72a.75.75 0 0 1 1.5 0v2.69Z"/></svg>,
     },
     {
       id: "sponsor",
@@ -777,51 +762,6 @@ export default function RepoPage() {
               <p className="text-xs text-text-muted mt-1">Tags from the repo state announcement will appear here</p>
             </div>
           )}
-        </div>
-      )}
-
-      {activeTab === "boards" && (
-        <div className="text-center py-10">
-          <svg width="32" height="32" viewBox="0 0 16 16" fill="currentColor" className="text-text-muted mx-auto mb-3">
-            <path d="M1.75 0h12.5C15.216 0 16 .784 16 1.75v12.5A1.75 1.75 0 0 1 14.25 16H1.75A1.75 1.75 0 0 1 0 14.25V1.75C0 .784.784 0 1.75 0ZM1.5 1.75v12.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25V1.75a.25.25 0 0 0-.25-.25H1.75a.25.25 0 0 0-.25.25ZM11.75 3a.75.75 0 0 1 .75.75v7.5a.75.75 0 0 1-1.5 0v-7.5a.75.75 0 0 1 .75-.75Zm-8.25.75a.75.75 0 0 1 1.5 0v5.5a.75.75 0 0 1-1.5 0ZM8 3a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 3Z"/>
-          </svg>
-          <p className="text-text-secondary mb-3">Organize work with kanban-style project boards.</p>
-          <Link
-            to={`/repo/${pubkey}/${identifier}/boards`}
-            className="btn btn-primary no-underline hover:no-underline"
-          >
-            Go to Boards
-          </Link>
-        </div>
-      )}
-
-      {activeTab === "insights" && (
-        <div className="text-center py-10">
-          <svg width="32" height="32" viewBox="0 0 16 16" fill="currentColor" className="text-text-muted mx-auto mb-3">
-            <path d="M1.5 1.75V13.5h13.75a.75.75 0 0 1 0 1.5H.75a.75.75 0 0 1-.75-.75V1.75a.75.75 0 0 1 1.5 0Zm14.28 2.53-5.25 5.25a.75.75 0 0 1-1.06 0L7 7.06 4.28 9.78a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042l3.25-3.25a.75.75 0 0 1 1.06 0L10 7.94l4.72-4.72a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042Z"/>
-          </svg>
-          <p className="text-text-secondary mb-3">View contribution activity and repository analytics.</p>
-          <Link
-            to={`/repo/${pubkey}/${identifier}/insights`}
-            className="btn btn-primary no-underline hover:no-underline"
-          >
-            Go to Insights
-          </Link>
-        </div>
-      )}
-
-      {activeTab === "changelog" && (
-        <div className="text-center py-10">
-          <svg width="32" height="32" viewBox="0 0 16 16" fill="currentColor" className="text-text-muted mx-auto mb-3">
-            <path d="M1 7.775V2.75C1 1.784 1.784 1 2.75 1h5.025c.464 0 .91.184 1.238.513l6.25 6.25a1.75 1.75 0 0 1 0 2.474l-5.026 5.026a1.75 1.75 0 0 1-2.474 0l-6.25-6.25A1.752 1.752 0 0 1 1 7.775Zm1.5 0c0 .066.026.13.073.177l6.25 6.25a.25.25 0 0 0 .354 0l5.025-5.025a.25.25 0 0 0 0-.354l-6.25-6.25a.25.25 0 0 0-.177-.073H2.75a.25.25 0 0 0-.25.25ZM6 5a1 1 0 1 1 0 2 1 1 0 0 1 0-2Z"/>
-          </svg>
-          <p className="text-text-secondary mb-3">Track release notes and version history.</p>
-          <Link
-            to={`/repo/${pubkey}/${identifier}/changelog`}
-            className="btn btn-primary no-underline hover:no-underline"
-          >
-            Go to Changelog
-          </Link>
         </div>
       )}
 
