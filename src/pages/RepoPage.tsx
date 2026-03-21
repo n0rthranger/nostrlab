@@ -89,9 +89,9 @@ export default function RepoPage() {
       if (cancelled) return;
       setRepo(repo);
       setRepoState(state);
-      // Default to git if HTTP clone URLs exist, otherwise nostr files
+      // Default to code tab if any cloneable URL exists (http, git://, or blossom)
       if (repo) {
-        const hasCloneUrl = repo.cloneUrls.some((u: string) => /^https?:\/\//i.test(u));
+        const hasCloneUrl = repo.cloneUrls.some((u: string) => /^(https?|git):\/\//i.test(u));
         setCodeSource(hasCloneUrl ? "git" : "nostr");
       }
       setIssues(issues);

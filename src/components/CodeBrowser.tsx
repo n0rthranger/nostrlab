@@ -41,9 +41,11 @@ export default function CodeBrowser({ cloneUrls, repoId, repoPubkey, repoIdentif
   const dir = `/${repoId}`;
   const { pubkey, signer } = useAuth();
   const isOwner = !!(pubkey && repoPubkey && pubkey === repoPubkey);
-  // Categorize URLs
+  // Categorize URLs — convert git:// to https:// so they can be cloned via CORS proxy
   const blossomUrls = cloneUrls.filter((u) => isBlossomUrl(u));
-  const httpUrls = cloneUrls.filter((u) => /^https?:\/\//i.test(u) && !isBlossomUrl(u));
+  const httpUrls = cloneUrls
+    .map((u) => u.replace(/^git:\/\//i, "https://").replace(/\.git$/, ""))
+    .filter((u) => /^https?:\/\//i.test(u) && !isBlossomUrl(u));
   const canBrowse = blossomUrls.length > 0 || httpUrls.length > 0;
   const [cloned, setCloned] = useState(false);
   const [cloning, setCloning] = useState(false);
