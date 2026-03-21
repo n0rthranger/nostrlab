@@ -40,7 +40,6 @@ import NostrCodeBrowser from "../components/NostrCodeBrowser";
 import RepoRefs from "../components/RepoRefs";
 import StarButton from "../components/StarButton";
 import ZapButton from "../components/ZapButton";
-import { generateRepoRSS } from "../lib/rss";
 import CIStatusBadge from "../components/CIStatusBadge";
 import ForkDiffView from "../components/ForkDiffView";
 import SponsorTab from "../components/SponsorTab";
@@ -361,36 +360,6 @@ export default function RepoPage() {
             Settings
           </Link>
         )}
-        <button
-          onClick={() => {
-            const items = [
-              ...issues.map((i) => ({
-                title: `Issue: ${i.subject}`,
-                link: `${window.location.origin}/repo/${pubkey}/${identifier}/issues/${i.id}`,
-                description: i.content.slice(0, 200),
-                pubDate: new Date(i.createdAt * 1000),
-              })),
-              ...patches.map((p) => ({
-                title: `Patch: ${p.content.split("\n")[0].slice(0, 80)}`,
-                link: `${window.location.origin}/repo/${pubkey}/${identifier}/patches/${p.id}`,
-                description: p.content.slice(0, 200),
-                pubDate: new Date(p.createdAt * 1000),
-              })),
-            ].sort((a, b) => b.pubDate.getTime() - a.pubDate.getTime()).slice(0, 50);
-            const xml = generateRepoRSS(repo, items);
-            const blob = new Blob([xml], { type: "application/rss+xml" });
-            const blobUrl = URL.createObjectURL(blob);
-            window.open(blobUrl, "_blank");
-            setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
-          }}
-          className="btn btn-sm"
-          data-tooltip="RSS Feed"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/>
-          </svg>
-          RSS
-        </button>
       </div>
 
       {/* UnderlineNav tabs */}
