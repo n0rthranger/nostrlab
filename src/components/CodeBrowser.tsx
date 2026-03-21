@@ -84,8 +84,8 @@ export default function CodeBrowser({ cloneUrls, repoId, repoPubkey, repoIdentif
       localStorage.setItem(`clone-time:${targetDir}`, String(Date.now()));
       setCloned(true);
       await loadTree();
-    } catch (err: unknown) {
-      if (!cancelled.current) setError(err instanceof Error ? err.message : "Clone from Blossom failed");
+    } catch {
+      if (!cancelled.current) onCloneFailed?.();
     } finally {
       if (!cancelled.current) { setCloning(false); setProgress(""); }
     }
@@ -131,8 +131,8 @@ export default function CodeBrowser({ cloneUrls, repoId, repoPubkey, repoIdentif
             setCloned(true);
             await loadTree();
           }
-        } catch (err: unknown) {
-          if (!cancelled.current) setError(err instanceof Error ? err.message : "Clone failed");
+        } catch {
+          if (!cancelled.current) onCloneFailed?.();
         } finally {
           if (!cancelled.current) { setCloning(false); setProgress(""); }
         }
@@ -154,8 +154,8 @@ export default function CodeBrowser({ cloneUrls, repoId, repoPubkey, repoIdentif
             setCloned(true);
             await loadTree();
           }
-        } catch (err: unknown) {
-          if (!cancelled.current) setError(err instanceof Error ? err.message : "Clone failed");
+        } catch {
+          if (!cancelled.current) onCloneFailed?.();
         } finally {
           if (!cancelled.current) { setCloning(false); setProgress(""); }
         }
