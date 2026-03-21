@@ -237,8 +237,8 @@ export async function cloneFromBlossom(
       );
       await git.checkout({ fs: fsInstance, dir, ref: "main" });
       checkedOut = true;
-    } catch {
-      onProgress?.("Hint commit not found, scanning pack...");
+    } catch (err) {
+      onProgress?.(`Hint commit failed: ${err instanceof Error ? err.message : err}, scanning pack...`);
     }
   }
 

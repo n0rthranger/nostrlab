@@ -176,6 +176,26 @@ export default function CodeBrowser({ cloneUrls, repoId, repoPubkey, repoIdentif
     setSelectedPath(undefined);
     setFileContent(null);
     setReadmeContent(null);
+    // Trigger a fresh clone
+    setCloning(true);
+    setError("");
+    setProgress("Re-cloning...");
+    try {
+      if (blossomUrls.length > 0) {
+        await cloneFromBlossom(blossomUrls[0], dir, (msg) => setProgress(msg));
+      } else if (httpUrls.length > 0) {
+        await cloneRepo(httpUrls[0], dir, (phase, loaded, total) => {
+          setProgress(`${phase}: ${loaded}${total ? `/${total}` : ""}`);
+        });
+      }
+      setCloned(true);
+      await loadTree();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Re-clone failed");
+    } finally {
+      setCloning(false);
+      setProgress("");
+    }
   };
 
   const handleSelectFile = async (path: string) => {

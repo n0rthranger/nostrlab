@@ -256,12 +256,19 @@ async function handlePush(src: string, dst: string): Promise<void> {
   const { url: blossomUrl } = await uploadBlob(keys.sk, packData);
   log(`Uploaded to: ${blossomUrl}`);
 
+  // Get HEAD commit OID to append as URL fragment (helps browser clone find the right commit)
+  let headOid = "";
+  try {
+    headOid = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf-8" }).stdout.trim();
+  } catch { /* ignore */ }
+  const blossomUrlWithHint = headOid ? `${blossomUrl}#${headOid}` : blossomUrl;
+
   // Update repo announcement with new Blossom URL
   if (repoInfo) {
     log("Updating repo announcement...");
     const updatedCloneUrls = [
       ...repoInfo.cloneUrls.filter((u) => !isBlossomUrl(u)),
-      blossomUrl,
+      blossomUrlWithHint,
     ];
     await publishRepoAnnouncement(keys.sk, {
       ...repoInfo,
