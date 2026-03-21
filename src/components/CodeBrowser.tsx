@@ -117,11 +117,28 @@ export default function CodeBrowser({ cloneUrls, repoId, repoPubkey, repoIdentif
         loadTree();
       } else if (blossomUrls.length > 0) {
         await cloneFromBlossomUrl(blossomUrls[0], dir, cancelled);
+      } else if (httpUrls.length > 0) {
+        // Auto-clone from HTTP URL
+        setCloning(true);
+        setProgress("Cloning repository...");
+        try {
+          await cloneRepo(httpUrls[0], dir, (phase, loaded, total) => {
+            if (!cancelled.current) setProgress(`${phase}: ${loaded}${total ? `/${total}` : ""}`);
+          });
+          if (!cancelled.current) {
+            setCloned(true);
+            await loadTree();
+          }
+        } catch (err: unknown) {
+          if (!cancelled.current) setError(err instanceof Error ? err.message : "Clone failed");
+        } finally {
+          if (!cancelled.current) { setCloning(false); setProgress(""); }
+        }
       }
     });
     return () => { cancelled.current = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dir, blossomUrls.length]);
+  }, [dir, blossomUrls.length, httpUrls.length]);
 
   // Keyboard shortcut for file search
   useEffect(() => {
