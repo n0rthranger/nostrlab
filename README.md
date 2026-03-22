@@ -29,7 +29,6 @@ A decentralized GitHub alternative built on the [Nostr protocol](https://nostr.c
 ### Identity & Security
 - **NIP-49 encrypted key storage** -- Private keys encrypted with scrypt + XChaCha20-Poly1305; password stored in sessionStorage (cleared on tab close)
 - **NIP-07 extension support** -- Sign events with browser extensions (nos2x, Alby, Flamingo) or a local nsec key
-- **NIP-05 verification** -- DNS-based identity verification (e.g., `d3fault@nostrlab.com`)
 - **Rate-limited unlock** -- Exponential backoff lockout after failed password attempts
 - **XSS protection** -- DOMPurify sanitization on all rendered HTML (blame view, markdown)
 - **Path traversal protection** -- Validated file paths prevent directory escape in git operations
@@ -201,7 +200,6 @@ This app implements several Nostr Improvement Proposals:
 |-----|---------|
 | NIP-01 | Basic protocol, profile metadata (kind 0) |
 | NIP-02 | Contact list / following (kind 3) |
-| NIP-05 | DNS-based identity verification |
 | NIP-07 | Browser extension signing |
 | NIP-09 | Event deletion (kind 5) |
 | NIP-22 | Comments (kind 1111) |
