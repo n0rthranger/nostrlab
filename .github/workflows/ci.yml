@@ -9,6 +9,14 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://nostrlab:nostrlab@localhost:5432/nostrlab?schema=public
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      NOSTR_RELAYS: wss://relay.damus.io
+      NEXT_PUBLIC_NOSTR_RELAYS: wss://relay.damus.io
+      NOSTRLAB_SESSION_SECRET: CI_SESSION_PLACEHOLDER_DO_NOT_USE_1234567890
+      LIGHTNING_MODE: mock
+      UPLOAD_BACKEND: local
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
