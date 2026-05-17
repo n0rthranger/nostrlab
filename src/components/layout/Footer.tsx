@@ -44,9 +44,19 @@ export function Footer() {
         </Col>
       </div>
       <div className="border-t border-border">
-        <div className="max-w-6xl mx-auto px-5 py-4 text-xs text-muted flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="max-w-6xl mx-auto px-5 py-4 text-xs text-muted flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <span>© {new Date().getFullYear()} NostrLab · MIT</span>
-          <span>Open source under n0rthranger</span>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <span>Open sourced under MIT</span>
+            <a
+              href="https://github.com/n0rthranger/nostrlab"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex h-8 items-center justify-center rounded-full border border-border bg-surface px-3.5 text-xs font-semibold text-fg transition hover:border-fg/30 hover:bg-surface2 active:scale-[0.98]"
+            >
+              GitHub
+            </a>
+          </div>
         </div>
       </div>
     </footer>
