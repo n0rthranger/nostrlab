@@ -1,0 +1,93 @@
+{
+  "name": "nostrlab",
+  "version": "0.1.0",
+  "license": "MIT",
+  "description": "Decentralized event platform on Nostr + Bitcoin/Lightning.",
+  "homepage": "https://nostrlab.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/n0rthranger/nostrlab.git"
+  },
+  "bugs": {
+    "url": "https://github.com/n0rthranger/nostrlab/issues"
+  },
+  "packageManager": "pnpm@10.33.1",
+  "scripts": {
+    "dev": "tsx scripts/ensure-app-key.ts && next dev",
+    "build": "tsx scripts/ensure-app-key.ts && prisma generate && next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "verify": "pnpm prisma validate && pnpm typecheck && pnpm lint && pnpm audit --prod && pnpm build",
+    "test:e2e:api": "tsx scripts/e2e-api.ts",
+    "test:e2e:browser": "tsx scripts/e2e-browser.ts",
+    "test:e2e:nostr": "tsx scripts/e2e-nostr-ingest.ts",
+    "test:e2e:ticket-proof": "tsx scripts/e2e-ticket-proof.ts",
+    "test:load": "tsx scripts/load-smoke.ts",
+    "test:lnurl:live": "tsx scripts/verify-live-lnurl.ts",
+    "payments:reconcile": "tsx scripts/reconcile-payments.ts",
+    "payments:reconcile:loop": "tsx scripts/reconcile-payments.ts --loop",
+    "release:check": "tsx scripts/release-check.ts",
+    "release:verify": "pnpm verify && pnpm release:check",
+    "app:keygen": "tsx scripts/ensure-app-key.ts",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:status": "prisma migrate status",
+    "db:push": "prisma db push",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:studio": "prisma studio",
+    "backup:postgres": "bash scripts/backup-postgres.sh",
+    "restore:postgres": "bash scripts/restore-postgres.sh"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "pnpm": {
+    "overrides": {
+      "d3-color": "3.1.0",
+      "fast-xml-builder": "1.2.0",
+      "postcss": "8.5.10"
+    }
+  },
+  "knip": {
+    "ignoreDependencies": [
+      "eslint-config-next"
+    ]
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1038.0",
+    "@prisma/client": "^5.22.0",
+    "clsx": "^2.1.1",
+    "ioredis": "^5.10.1",
+    "light-bolt11-decoder": "^3.2.0",
+    "maplibre-gl": "^5.24.0",
+    "next": "^15.5.18",
+    "next-themes": "^0.4.3",
+    "nostr-tools": "^2.10.4",
+    "qrcode": "^1.5.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "sharp": "^0.34.5",
+    "tailwind-merge": "^2.5.4",
+    "ws": "^8.18.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.5",
+    "@types/node": "^22.9.0",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/ws": "^8.5.13",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^9.15.0",
+    "eslint-config-next": "^15.5.18",
+    "playwright": "^1.59.1",
+    "postcss": "^8.4.49",
+    "prisma": "^5.22.0",
+    "tailwindcss": "^3.4.15",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

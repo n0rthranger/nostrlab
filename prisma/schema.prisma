@@ -1,0 +1,431 @@
+// NostrLab — Postgres index/cache for Nostr-native event platform.
+// Source of truth for identity & events is Nostr; this DB indexes for fast
+// search, holds payment/ticket secrets that must never go to relays, and
+// caches profile metadata.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// -----------------------------------------------------------------------------
+// User — keyed by Nostr pubkey (hex). Profile fields are cached from kind:0.
+// We never store private keys.
+// -----------------------------------------------------------------------------
+model User {
+  pubkey         String    @id // 64-char hex
+  npub           String    @unique
+  displayName    String?
+  name           String?
+  about          String?
+  picture        String?
+  banner         String?
+  nip05          String?
+  lud16          String? // Lightning address
+  website        String?
+  profileFetched DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  events        Event[]              @relation("EventOrganizer")
+  cohostings    EventCohost[]
+  rsvps         Rsvp[]
+  tickets       Ticket[]
+  communities   Community[]          @relation("CommunityOrganizer")
+  moderating    CommunityModerator[]
+  follows       CommunityFollow[]
+  comments      EventComment[]
+  announcements EventAnnouncement[]
+  notifications Notification[]       @relation("NotificationRecipient")
+
+  @@index([nip05])
+  @@index([lud16])
+}
+
+// -----------------------------------------------------------------------------
+// Event — mirror of Nostr kind:31922 (parameterized replaceable).
+// nostrId is the latest event id; dTag + organizerPubkey is the stable identity.
+// -----------------------------------------------------------------------------
+enum EventMode {
+  ONLINE
+  OFFLINE
+  HYBRID
+}
+
+enum PaymentMode {
+  FREE
+  PAID
+}
+
+enum EventStatus {
+  ACTIVE
+  CANCELLED
+}
+
+enum RecurrenceFrequency {
+  NONE
+  WEEKLY
+  MONTHLY
+}
+
+model Event {
+  id              String        @id @default(cuid())
+  nostrId         String        @unique // latest event id (32-byte hex)
+  dTag            String // "d" tag — stable per organizer
+  organizerPubkey String
+  organizer       User          @relation("EventOrganizer", fields: [organizerPubkey], references: [pubkey])
+  cohosts         EventCohost[]
+
+  title               String
+  description         String               @db.Text
+  bannerUrl           String?
+  startsAt            DateTime
+  endsAt              DateTime?
+  timezone            String?
+  city                String?
+  venue               String?
+  geohash             String?
+  mode                EventMode            @default(OFFLINE)
+  capacity            Int?
+  status              EventStatus          @default(ACTIVE)
+  cancelledAt         DateTime?
+  cancellationReason  String?              @db.Text
+  recurrenceGroupId   String?
+  recurrenceIndex     Int?
+  recurrenceFrequency RecurrenceFrequency?
+
+  paymentMode PaymentMode @default(FREE)
+  priceSats   Int?
+
+  tags EventTag[]
+
+  rawEvent  Json // full signed Nostr event JSON, for re-broadcast & verification
+  clientTag String? // NIP-89 client identifier (e.g. "nostrlab")
+  summary   String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rsvps         Rsvp[]
+  tickets       Ticket[]
+  ticketTiers   TicketTier[]
+  payments      Payment[]
+  checkIns      CheckIn[]
+  comments      EventComment[]
+  announcements EventAnnouncement[]
+  notifications Notification[]
+  communityId   String?
+  community     Community?          @relation(fields: [communityId], references: [id])
+
+  @@unique([organizerPubkey, dTag])
+  @@index([startsAt])
+  @@index([startsAt, city, mode, paymentMode])
+  @@index([organizerPubkey, startsAt])
+  @@index([communityId, startsAt])
+  @@index([city])
+  @@index([paymentMode])
+  @@index([mode])
+  @@index([status])
+  @@index([communityId])
+  @@index([recurrenceGroupId])
+}
+
+// NIP-09 deletion tombstones. These prevent relay ingestion from re-indexing an
+// event after its organizer deletes the replaceable event coordinate.
+model DeletedEvent {
+  id                String   @id @default(cuid())
+  organizerPubkey   String
+  dTag              String
+  eventNostrId      String?
+  deletionNostrId   String
+  deletionCreatedAt Int
+  reason            String?  @db.Text
+  rawEvent          Json
+  createdAt         DateTime @default(now())
+
+  @@unique([organizerPubkey, dTag])
+  @@index([deletionNostrId])
+  @@index([eventNostrId])
+  @@index([organizerPubkey])
+}
+
+model EventCohost {
+  eventId String
+  pubkey  String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user    User   @relation(fields: [pubkey], references: [pubkey])
+
+  @@id([eventId, pubkey])
+}
+
+model EventTag {
+  eventId String
+  tag     String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, tag])
+  @@index([tag])
+}
+
+// -----------------------------------------------------------------------------
+// RSVP — mirror of kind:31925.
+// One row per (eventId, pubkey); latest signed event wins.
+// -----------------------------------------------------------------------------
+enum RsvpStatus {
+  GOING
+  MAYBE
+  NOT_GOING
+  WAITLIST
+}
+
+model Rsvp {
+  id        String     @id @default(cuid())
+  eventId   String
+  pubkey    String
+  status    RsvpStatus
+  nostrId   String     @unique
+  rawEvent  Json
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [pubkey], references: [pubkey])
+
+  // Future: store encrypted payload here for private RSVP.
+  privatePayload String? @db.Text
+
+  @@unique([eventId, pubkey])
+  @@index([eventId, status])
+  @@index([status])
+}
+
+model TicketTier {
+  id           String    @id @default(cuid())
+  eventId      String
+  name         String
+  description  String?   @db.Text
+  priceSats    Int
+  quantity     Int?
+  salesStartAt DateTime?
+  salesEndAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  event    Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  payments Payment[]
+  tickets  Ticket[]
+
+  @@index([eventId])
+}
+
+// -----------------------------------------------------------------------------
+// Payment — Lightning invoice tracking. Never published to Nostr.
+// -----------------------------------------------------------------------------
+enum PaymentStatus {
+  PENDING
+  PAID
+  EXPIRED
+  FAILED
+}
+
+model Payment {
+  id          String        @id @default(cuid())
+  eventId     String
+  buyerPubkey String
+  amountSats  Int
+  bolt11      String        @db.Text
+  paymentHash String        @unique // hex sha256 — extracted from bolt11
+  status      PaymentStatus @default(PENDING)
+  provider    String // "lnurl" | "mock" — direct-to-organizer
+  providerRef String? // organizer's lud16 (lnurl) or mock id
+  verifyUrl   String?       @db.Text // LUD-21 verify URL, polled until settled
+  preimage    String? // recorded after settlement; cryptographic receipt
+  tierId      String?
+  expiresAt   DateTime
+  paidAt      DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  event  Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tier   TicketTier? @relation(fields: [tierId], references: [id])
+  ticket Ticket?
+
+  @@index([buyerPubkey])
+  @@index([status])
+  @@index([eventId, status, expiresAt])
+  @@index([tierId])
+}
+
+// -----------------------------------------------------------------------------
+// Ticket — issued after a Payment is confirmed PAID, or for free events on RSVP.
+// "secret" is the QR payload — random, single-use validation token.
+// -----------------------------------------------------------------------------
+model Ticket {
+  id                  String    @id @default(cuid())
+  eventId             String
+  buyerPubkey         String
+  originalBuyerPubkey String?
+  tier                String    @default("general")
+  tierId              String?
+  secret              String    @unique // QR payload (UUID v4 hex); never published to Nostr
+  paymentId           String?   @unique
+  nostrId             String? // optional kind:31926 ticket proof event id
+  rawEvent            Json?
+  createdAt           DateTime  @default(now())
+  checkedInAt         DateTime?
+  transferredAt       DateTime?
+  transferCount       Int       @default(0)
+
+  event   Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  buyer   User        @relation(fields: [buyerPubkey], references: [pubkey])
+  payment Payment?    @relation(fields: [paymentId], references: [id])
+  tierRef TicketTier? @relation(fields: [tierId], references: [id])
+  checkIn CheckIn?
+
+  @@index([eventId])
+  @@index([buyerPubkey])
+  @@index([eventId, buyerPubkey])
+  @@index([tierId])
+}
+
+// -----------------------------------------------------------------------------
+// Check-in — audit log for organizer scans.
+// -----------------------------------------------------------------------------
+model CheckIn {
+  id              String   @id @default(cuid())
+  ticketId        String   @unique
+  eventId         String
+  scannedByPubkey String
+  scannedAt       DateTime @default(now())
+  method          String   @default("qr") // "qr" | "manual"
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  event  Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+}
+
+// -----------------------------------------------------------------------------
+// Community — lightweight grouping; events can optionally be linked to one.
+// -----------------------------------------------------------------------------
+model Community {
+  id              String               @id @default(cuid())
+  slug            String               @unique
+  name            String
+  description     String               @db.Text
+  imageUrl        String?
+  website         String?
+  verifiedAt      DateTime?
+  verifiedMethod  String?
+  organizerPubkey String
+  organizer       User                 @relation("CommunityOrganizer", fields: [organizerPubkey], references: [pubkey])
+  moderators      CommunityModerator[]
+  tags            CommunityTag[]
+  events          Event[]
+  followers       CommunityFollow[]
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+}
+
+model CommunityModerator {
+  communityId String
+  pubkey      String
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [pubkey], references: [pubkey])
+
+  @@id([communityId, pubkey])
+}
+
+model CommunityTag {
+  communityId String
+  tag         String
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  @@id([communityId, tag])
+  @@index([tag])
+}
+
+model CommunityFollow {
+  communityId String
+  pubkey      String
+  createdAt   DateTime @default(now())
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [pubkey], references: [pubkey])
+
+  @@id([communityId, pubkey])
+  @@index([pubkey])
+}
+
+model EventComment {
+  id        String   @id @default(cuid())
+  eventId   String
+  pubkey    String
+  body      String   @db.Text
+  nostrId   String?
+  createdAt DateTime @default(now())
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [pubkey], references: [pubkey])
+
+  @@index([eventId, createdAt])
+  @@index([pubkey])
+}
+
+model EventAnnouncement {
+  id        String   @id @default(cuid())
+  eventId   String
+  pubkey    String
+  title     String
+  body      String   @db.Text
+  createdAt DateTime @default(now())
+
+  event  Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  author User  @relation(fields: [pubkey], references: [pubkey])
+
+  @@index([eventId, createdAt])
+}
+
+enum NotificationType {
+  ANNOUNCEMENT
+  CANCELLATION
+  TICKET_TRANSFER
+  TICKET_ISSUED
+  WAITLIST
+}
+
+model Notification {
+  id              String           @id @default(cuid())
+  recipientPubkey String
+  type            NotificationType
+  title           String
+  body            String           @db.Text
+  eventId         String?
+  announcementId  String?
+  ticketId        String?
+  readAt          DateTime?
+  createdAt       DateTime         @default(now())
+
+  recipient User   @relation("NotificationRecipient", fields: [recipientPubkey], references: [pubkey], onDelete: Cascade)
+  event     Event? @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([recipientPubkey, readAt, createdAt])
+  @@index([eventId])
+}
+
+// -----------------------------------------------------------------------------
+// BannedPubkey — operational moderation. We refuse writes from these pubkeys
+// and hide their indexed events on read. Doesn't remove the events from
+// Nostr — they're still visible on relays. We just don't display them on our
+// UI. A reasonable line for a "selective indexer", not censorship.
+// -----------------------------------------------------------------------------
+model BannedPubkey {
+  pubkey   String   @id
+  reason   String?
+  bannedBy String
+  bannedAt DateTime @default(now())
+}
