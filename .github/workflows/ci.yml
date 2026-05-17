@@ -17,6 +17,7 @@ jobs:
       NOSTRLAB_SESSION_SECRET: CI_SESSION_PLACEHOLDER_DO_NOT_USE_1234567890
       LIGHTNING_MODE: mock
       UPLOAD_BACKEND: local
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -35,6 +36,9 @@ jobs:
 
       - name: Validate Prisma schema
         run: pnpm prisma validate
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
 
       - name: Typecheck
         run: pnpm typecheck
