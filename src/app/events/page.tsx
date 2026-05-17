@@ -5,7 +5,8 @@ import { EventFilters } from "@/components/events/EventFilters";
 import { EventListingRow } from "@/components/events/EventListingRow";
 import { Empty } from "@/components/ui/Empty";
 import { bannedSet } from "@/lib/moderation";
-import { HUBS, findHub, findHubInText, normalizeCitySlug, regionForCitySlug, regionForCoordinates } from "@/lib/cities";
+import { HUBS, findHub, findHubInText, inferCityName, normalizeCitySlug, regionForCitySlug, regionForCoordinates, regionForText } from "@/lib/cities";
+import { EVENT_CATEGORIES, eventCategorySlug, eventMatchesCategory } from "@/lib/event-categories";
 import { decodeGeohash } from "@/lib/geohash";
 import { slugify } from "@/lib/utils";
 import type { EventListItemDTO } from "@/types";
@@ -15,15 +16,7 @@ import type { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
-const CATEGORY_DEFS: { slug: string; label: string; emoji: string; tags: string[]; mode?: "online" }[] = [
-  { slug: "bitcoin",    label: "Bitcoin",        emoji: "₿",  tags: ["bitcoin", "btc", "satoshi"] },
-  { slug: "nostr",      label: "Nostr",          emoji: "ostrich", tags: ["nostr", "nip", "relays"] },
-  { slug: "hack",       label: "Hack Nights",    emoji: "{}", tags: ["hack", "hackathon", "build"] },
-  { slug: "workshop",   label: "Workshops",      emoji: "○",  tags: ["workshop", "tutorial", "intro"] },
-  { slug: "online",     label: "Online",         emoji: "🌐", tags: [], mode: "online" },
-  { slug: "social",     label: "Socials & BBQs", emoji: "❡",  tags: ["bbq", "social", "party", "drinks"] },
-  { slug: "meetup",     label: "General Meetups", emoji: "▲", tags: ["meetup", "community", "chicago"] },
-];
+const DISCOVERY_SCAN_LIMIT = 1000;
 
 async function getData() {
   const banned = await bannedSet();
@@ -37,7 +30,7 @@ async function getData() {
     prisma.event.findMany({
       where: eventWhere,
       orderBy: { startsAt: "asc" },
-      take: 200,
+      take: DISCOVERY_SCAN_LIMIT,
       include: {
         organizer: true,
         tags: true,
@@ -67,9 +60,14 @@ async function getData() {
 
   const dtos = events.map(eventToListDTO);
 
+  function eventCityName(e: EventListItemDTO): string {
+    if (e.mode === "ONLINE") return "Online";
+    return inferCityName(e.city, e.venue) ?? "Other";
+  }
+
   const byCity = new Map<string, EventListItemDTO[]>();
   for (const e of dtos) {
-    const key = e.mode === "ONLINE" ? "Online" : (e.city?.trim() || e.venue?.trim() || "Other");
+    const key = eventCityName(e);
     if (!byCity.has(key)) byCity.set(key, []);
     byCity.get(key)!.push(e);
   }
@@ -82,18 +80,17 @@ async function getData() {
   ]);
   const defaultCity = "All";
 
-  const categories: CategoryCount[] = CATEGORY_DEFS.map((def) => {
-    let count = 0;
-    if (def.mode === "online") {
-      count = dtos.filter((e) => e.mode === "ONLINE").length;
-    } else {
-      const tagSet = new Set(def.tags);
-      count = dtos.filter((e) =>
-        e.tags.some((t) => tagSet.has(t.toLowerCase()))
-      ).length;
-    }
-    return { slug: def.slug, label: def.label, emoji: def.emoji, count };
-  });
+  const categoryCounts = new Map(EVENT_CATEGORIES.map((category) => [category.slug, 0]));
+  for (const event of events) {
+    const slug = eventCategorySlug(event);
+    categoryCounts.set(slug, (categoryCounts.get(slug) ?? 0) + 1);
+  }
+  const categories: CategoryCount[] = EVENT_CATEGORIES.map((def) => ({
+    slug: def.slug,
+    label: def.label,
+    emoji: def.emoji,
+    count: categoryCounts.get(def.slug) ?? 0,
+  }));
 
   const citiesBySlug = new Map<string, CityCount>();
   for (const h of HUBS) {
@@ -127,7 +124,7 @@ async function getData() {
       citiesBySlug.get("__online__")!.count += 1;
       continue;
     }
-    const hub = findHub(e.city) ?? findHubInText(e.venue);
+    const hub = findHub(e.city) ?? findHubInText(e.city) ?? findHubInText(e.venue);
     if (hub) {
       const slug = normalizeCitySlug(hub.slug);
       const existing = citiesBySlug.get(slug);
@@ -135,13 +132,15 @@ async function getData() {
       continue;
     }
 
-    const name = e.city?.trim() || e.venue?.trim();
+    const name = inferCityName(e.city, e.venue);
     if (!name) continue;
     const point = e.geohash ? decodeGeohash(e.geohash) : null;
+    const textRegion = regionForText([e.city, e.venue].filter(Boolean).join(" "));
+    const region = textRegion !== "virtual" ? textRegion : point ? regionForCoordinates(point.lat, point.lng) : "virtual";
     incrementCity({
-      slug: `geo-${slugify(name) || e.geohash || "other"}`,
+      slug: slugify(name) || "other",
       name,
-      region: point ? regionForCoordinates(point.lat, point.lng) : "virtual",
+      region,
       count: 0,
     });
   }
@@ -156,7 +155,7 @@ async function getData() {
 }
 
 function hasSearchParams(sp: Record<string, string | undefined>): boolean {
-  return ["q", "city", "tag", "mode", "paid", "from", "to", "status", "view", "lat", "lng"].some((k) => !!sp[k]);
+  return ["q", "city", "tag", "category", "mode", "paid", "from", "to", "status", "view", "lat", "lng"].some((k) => !!sp[k]);
 }
 
 function distanceKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
@@ -174,7 +173,7 @@ function distanceKm(a: { lat: number; lng: number }, b: { lat: number; lng: numb
 function eventPoint(event: { geohash?: string | null; city?: string | null; venue?: string | null }): { lat: number; lng: number } | null {
   const geo = event.geohash ? decodeGeohash(event.geohash) : null;
   if (geo) return geo;
-  const hub = findHub(event.city) ?? findHubInText(event.venue);
+  const hub = findHub(event.city) ?? findHubInText(event.city) ?? findHubInText(event.venue);
   return hub ? { lat: hub.lat, lng: hub.lng } : null;
 }
 
@@ -223,16 +222,20 @@ async function getSearchResults(sp: Record<string, string | undefined>) {
   const rows = await prisma.event.findMany({
     where,
     orderBy: { startsAt: "asc" },
-    take: f.lat !== undefined && f.lng !== undefined ? 200 : f.limit,
+    take: f.lat !== undefined && f.lng !== undefined ? 200 : f.category ? DISCOVERY_SCAN_LIMIT : f.limit,
     include: {
       organizer: true,
       tags: true,
       _count: { select: { rsvps: true } },
     },
   });
+  const categoryRows = f.category
+    ? rows.filter((row) => eventMatchesCategory(row, f.category!)).slice(0, f.limit)
+    : rows;
+
   if (f.lat !== undefined && f.lng !== undefined) {
     const origin = { lat: f.lat, lng: f.lng };
-    const nearby = rows
+    const nearby = categoryRows
       .map((row) => {
         const point = eventPoint(row);
         return point ? { row, km: distanceKm(origin, point) } : null;
@@ -243,7 +246,7 @@ async function getSearchResults(sp: Record<string, string | undefined>) {
       .map((item) => eventToListDTO(item.row));
     return { events: nearby, error: null };
   }
-  return { events: rows.map(eventToListDTO), error: null };
+  return { events: categoryRows.map(eventToListDTO), error: null };
 }
 
 export default async function EventsPage({

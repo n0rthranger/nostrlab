@@ -5,12 +5,15 @@ import { eventCreateSchema, eventFilterSchema } from "@/lib/validation";
 import { eventModeToDb } from "@/lib/nostr/parse";
 import { publishToRelays } from "@/lib/nostr/relay-pool";
 import { eventToListDTO } from "@/lib/dto";
+import { eventMatchesCategory } from "@/lib/event-categories";
 import { rateLimit } from "@/lib/rate-limit";
 import { bannedSet } from "@/lib/moderation";
 import { clientIp } from "@/lib/request-ip";
 import { ingestEventListing } from "@/lib/nostr/ingest-event";
 
 export const dynamic = "force-dynamic";
+
+const CATEGORY_SCAN_LIMIT = 1000;
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
@@ -22,7 +25,15 @@ export async function GET(req: NextRequest) {
   const banned = await bannedSet();
 
   const where: Prisma.EventWhereInput = {};
-  if (f.city) where.city = { equals: f.city, mode: "insensitive" };
+  const and: Prisma.EventWhereInput[] = [];
+  if (f.city) {
+    and.push({
+      OR: [
+        { city: { contains: f.city, mode: "insensitive" } },
+        { venue: { contains: f.city, mode: "insensitive" } },
+      ],
+    });
+  }
   if (f.mode) where.mode = eventModeToDb(f.mode);
   if (f.paid === "free") where.paymentMode = "FREE";
   if (f.paid === "paid") where.paymentMode = "PAID";
@@ -38,31 +49,37 @@ export async function GET(req: NextRequest) {
   }
   if (f.tag) where.tags = { some: { tag: f.tag.toLowerCase() } };
   if (f.q) {
-    where.OR = [
-      { title: { contains: f.q, mode: "insensitive" } },
-      { description: { contains: f.q, mode: "insensitive" } },
-      { city: { contains: f.q, mode: "insensitive" } },
-      { venue: { contains: f.q, mode: "insensitive" } },
-    ];
+    and.push({
+      OR: [
+        { title: { contains: f.q, mode: "insensitive" } },
+        { description: { contains: f.q, mode: "insensitive" } },
+        { city: { contains: f.q, mode: "insensitive" } },
+        { venue: { contains: f.q, mode: "insensitive" } },
+      ],
+    });
   }
   if (banned.size > 0) {
     where.organizerPubkey = { notIn: [...banned] };
   }
+  if (and.length > 0) where.AND = and;
 
   const events = await prisma.event.findMany({
     where,
     orderBy: { startsAt: "asc" },
-    take: f.limit + 1,
-    ...(f.cursor ? { skip: 1, cursor: { id: f.cursor } } : {}),
-      include: {
-        organizer: true,
-        tags: true,
+    take: f.category ? CATEGORY_SCAN_LIMIT : f.limit + 1,
+    ...(f.cursor && !f.category ? { skip: 1, cursor: { id: f.cursor } } : {}),
+    include: {
+      organizer: true,
+      tags: true,
       _count: { select: { rsvps: true } },
     },
   });
 
-  const hasMore = events.length > f.limit;
-  const slice = hasMore ? events.slice(0, f.limit) : events;
+  const filtered = f.category
+    ? events.filter((event) => eventMatchesCategory(event, f.category!))
+    : events;
+  const hasMore = !f.category && filtered.length > f.limit;
+  const slice = (hasMore ? filtered.slice(0, f.limit) : filtered).slice(0, f.limit);
   const nextCursor = hasMore ? slice[slice.length - 1].id : null;
 
   return NextResponse.json({

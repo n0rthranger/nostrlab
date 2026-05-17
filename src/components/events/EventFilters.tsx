@@ -79,7 +79,7 @@ export function EventFilters() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, city]);
 
-  const hasFilters = !!(sp.get("q") || sp.get("city") || sp.get("tag") || sp.get("mode") || sp.get("paid") || sp.get("status") || sp.get("view") || sp.get("lat") || sp.get("lng"));
+  const hasFilters = !!(sp.get("q") || sp.get("city") || sp.get("tag") || sp.get("category") || sp.get("mode") || sp.get("paid") || sp.get("status") || sp.get("view") || sp.get("lat") || sp.get("lng"));
 
   return (
     <div className="space-y-3">

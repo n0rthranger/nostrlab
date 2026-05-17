@@ -268,7 +268,7 @@ function PopularEventCard({ event }: { event: EventListItemDTO }) {
 function CategoryTile({ category, index }: { category: CategoryCount; index: number }) {
   return (
     <Link
-      href={`/events?tag=${encodeURIComponent(category.slug)}`}
+      href={`/events?category=${encodeURIComponent(category.slug)}&limit=200`}
       className="group relative rounded-2xl bg-white border border-zinc-200 hover:border-zinc-950 transition-colors p-6 flex flex-col justify-between min-h-[160px] overflow-hidden"
     >
       <div className="flex items-start justify-between">

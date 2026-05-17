@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { EVENT_MODES, RSVP_STATUSES } from "@/lib/nostr/kinds";
+import { EVENT_CATEGORY_SLUGS } from "@/lib/event-categories";
 
 const hex64 = z.string().regex(/^[0-9a-f]{64}$/i);
 const imageUrl = z.string().max(2048).refine(
@@ -38,6 +39,7 @@ export const privateRsvpCreateSchema = z.object({
 export const eventFilterSchema = z.object({
   city: z.string().optional(),
   tag: z.string().optional(),
+  category: z.enum(EVENT_CATEGORY_SLUGS).optional(),
   q: z.string().optional(),
   mode: z.enum(EVENT_MODES).optional(),
   paid: z.enum(["free", "paid"]).optional(),

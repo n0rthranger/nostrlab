@@ -1,12 +1,22 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { HUBS, findHub, findHubInText, regionForCoordinates, regionLabel } from "@/lib/cities";
+import {
+  HUBS,
+  findHub,
+  findHubInText,
+  inferCityName,
+  regionForCoordinates,
+  regionForText,
+  regionLabel,
+} from "@/lib/cities";
 import { eventToListDTO } from "@/lib/dto";
 import { bannedSet } from "@/lib/moderation";
 import { decodeGeohash } from "@/lib/geohash";
 import { slugify } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
+
+const CITY_SCAN_LIMIT = 1000;
 
 // Returns an entry for every hub city, with:
 //   - eventCount (upcoming, indexed)
@@ -24,7 +34,7 @@ export async function GET() {
   const events = await prisma.event.findMany({
     where,
     orderBy: { startsAt: "asc" },
-    take: 200,
+    take: CITY_SCAN_LIMIT,
     include: { organizer: true, tags: true, _count: { select: { rsvps: { where: { status: "GOING" } } } } },
   });
 
@@ -67,11 +77,13 @@ export async function GET() {
   function dynamicBucket(ev: typeof events[number]): Bucket | null {
     const point = ev.geohash ? decodeGeohash(ev.geohash) : null;
     if (!point) return null;
-    const name = ev.city?.trim() || ev.venue?.trim() || "Event location";
+    const name = inferCityName(ev.city, ev.venue);
+    if (!name) return null;
     const slug = `geo-${slugify(name) || ev.geohash}`;
     const existing = buckets.get(slug);
     if (existing) return existing;
-    const region = regionForCoordinates(point.lat, point.lng);
+    const textRegion = regionForText([ev.city, ev.venue].filter(Boolean).join(" "));
+    const region = textRegion !== "virtual" ? textRegion : regionForCoordinates(point.lat, point.lng);
     const bucket: Bucket = {
       slug,
       name,
@@ -88,7 +100,7 @@ export async function GET() {
 
   for (const ev of events) {
     const hub = ev.mode === "ONLINE" ? buckets.get("__online__")! : (() => {
-      const h = findHub(ev.city) ?? findHubInText(ev.venue);
+      const h = findHub(ev.city) ?? findHubInText(ev.city) ?? findHubInText(ev.venue);
       return h ? buckets.get(h.slug)! : dynamicBucket(ev);
     })();
     if (!hub) continue;

@@ -101,6 +101,89 @@ export function findHubInText(text: string | null | undefined): CityHub | null {
   }) ?? null;
 }
 
+const COUNTRY_REGION_PATTERNS: Array<[RegExp, RegionSlug]> = [
+  [/\b(united states|usa|u\.s\.a\.|canada|mexico|puerto rico)\b/i, "na"],
+  [/\b(argentina|brazil|brasil|chile|colombia|paraguay|uruguay|peru|ecuador|venezuela|bolivia)\b/i, "sa"],
+  [/\b(united kingdom|uk|england|scotland|ireland|france|germany|spain|portugal|netherlands|switzerland|austria|italy|greece|poland|czechia|czech republic|sweden|norway|denmark|belgium|luxembourg|latvia)\b/i, "eu"],
+  [/\b(australia|new zealand|indonesia|japan|singapore|korea|hong kong|thailand|philippines|india|israel|uae|turkey)\b/i, "asia-pacific"],
+  [/\b(south africa|kenya|nigeria|ghana|morocco|egypt|tanzania|uganda)\b/i, "af"],
+];
+
+export function regionForText(text: string | null | undefined): RegionSlug {
+  if (!text) return "virtual";
+  const match = COUNTRY_REGION_PATTERNS.find(([pattern]) => pattern.test(text));
+  return match ? match[1] : "virtual";
+}
+
+const COUNTRY_OR_REGION_ONLY = /^(?:united states|usa|u\.s\.a\.|canada|mexico|puerto rico|argentina|brazil|brasil|chile|colombia|paraguay|uruguay|peru|ecuador|venezuela|bolivia|united kingdom|uk|england|scotland|ireland|france|germany|spain|portugal|netherlands|switzerland|austria|italy|greece|poland|czechia|czech republic|sweden|norway|denmark|belgium|latvia|australia|new zealand|indonesia|japan|singapore|korea|hong kong|thailand|philippines|india|israel|uae|turkey|south africa|kenya|nigeria|ghana|morocco|egypt|tanzania|uganda)$/i;
+const ADDRESS_WORDS = /\b(st|street|rd|road|ave|avenue|blvd|boulevard|way|lane|ln|drive|dr|highway|hwy|route|sr|passage|strasse|straße|calle|rue|jl|weg|ro|suite|ste|unit|floor|fl|shop|plaza|mall|centre|center)\b/i;
+const VENUE_WORDS = /\b(cafe|coffee|restaurant|bar|pub|brewery|winery|hotel|cinema|theatre|theater|room|hall|club|distilling|diner|library|museum|deli|icehouse)\b/i;
+const UNRESOLVED_LOCATION_WORDS = /\b(tbd|to be determined|telegram|bekanntgegeben|spontan|seen to attendees)\b/i;
+const ADMIN_REGION_WORDS = /\b(regency|province|state|county|bengal)\b/i;
+
+function cleanCityCandidate(segment: string): string {
+  return segment
+    .replace(/\([^)]*\)/g, "")
+    .replace(/\s*\([^)]*$/g, "")
+    .replace(/^[A-Z0-9 -]*\d[A-Z0-9 -]*\s+(?=[A-ZÀ-Þa-zà-ÿ])/i, "")
+    .replace(/^\d{4,6}\s+/, "")
+    .replace(/\s+-\s+[A-Z]{2,4}$/i, "")
+    .replace(/\s+[A-Z]{2,3}$/, "")
+    .replace(/\s+[A-Z]{2,3}\s+\d[\dA-Z -]*$/i, "")
+    .replace(/\s+\d{4,6}(?:-\d+)?$/i, "")
+    .trim();
+}
+
+function isUsableCityCandidate(segment: string): boolean {
+  const candidate = cleanCityCandidate(segment);
+  if (candidate.length < 2 || candidate.length > 56) return false;
+  if (UNRESOLVED_LOCATION_WORDS.test(candidate)) return false;
+  if (ADMIN_REGION_WORDS.test(candidate)) return false;
+  if (COUNTRY_OR_REGION_ONLY.test(candidate)) return false;
+  if (/^\d/.test(candidate)) return false;
+  if (/^[A-Z]{1,4}$/i.test(candidate)) return false;
+  if (/^[A-Z]{2,3}\s+[A-Z0-9][A-Z0-9 -]*\d/i.test(candidate)) return false;
+  if (/^\d{4,6}(?:-\d+)?$/.test(candidate)) return false;
+  if (/\d/.test(candidate)) return false;
+  if (ADDRESS_WORDS.test(candidate)) return false;
+  if (VENUE_WORDS.test(candidate) && !/\b(city|town|bay|beach|springs|heights|village)\b/i.test(candidate)) return false;
+  return true;
+}
+
+function trailingInCity(segment: string): string | null {
+  const match = segment.match(/\bin\s+([A-ZÀ-Þ][A-Za-zÀ-ÿ .'-]{2,44})(?:,\s*[A-Z]{2,4})?$/);
+  if (!match || !isUsableCityCandidate(match[1])) return null;
+  return cleanCityCandidate(match[1]);
+}
+
+export function inferCityName(city: string | null | undefined, venue: string | null | undefined): string | null {
+  const explicit = city?.trim();
+  const explicitHub = findHubInText(explicit);
+  if (explicitHub) return explicitHub.name;
+  const explicitTrailingCity = explicit ? trailingInCity(explicit) : null;
+  if (explicitTrailingCity) return explicitTrailingCity;
+  if (explicit && isUsableCityCandidate(explicit)) return cleanCityCandidate(explicit);
+
+  const hub = findHubInText(venue);
+  if (hub) return hub.name;
+  if (!venue) return null;
+
+  const trailingCity = trailingInCity(venue);
+  if (trailingCity) return trailingCity;
+
+  const parts = venue
+    .split(",")
+    .map((part) => cleanCityCandidate(part))
+    .filter(Boolean);
+
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const cityFromPart = trailingInCity(parts[i]);
+    if (cityFromPart) return cityFromPart;
+    if (isUsableCityCandidate(parts[i])) return parts[i];
+  }
+  return null;
+}
+
 export function regionForCitySlug(slug: string): RegionSlug {
   const norm = normalizeCitySlug(slug);
   const NA = ["chicago", "new york", "san francisco", "austin", "miami", "los angeles", "nashville", "denver", "toronto", "mexico city", "vancouver"];
