@@ -640,6 +640,23 @@ input::placeholder, textarea::placeholder { color: rgb(var(--subtle)); }
   overscroll-behavior-x: contain;
   -webkit-overflow-scrolling: touch;
 }
+.global-event-carousel[data-moving="true"] {
+  overflow-x: hidden;
+}
+.global-event-carousel-track {
+  will-change: transform;
+}
+.global-event-carousel[data-moving="true"] .global-event-carousel-track {
+  animation: global-carousel-marquee var(--carousel-duration, 56s) linear infinite;
+}
+.global-event-carousel[data-moving="true"]:hover .global-event-carousel-track,
+.global-event-carousel[data-moving="true"]:focus-within .global-event-carousel-track {
+  animation-play-state: paused;
+}
+@keyframes global-carousel-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
 .global-event-carousel::-webkit-scrollbar {
   height: 10px;
 }

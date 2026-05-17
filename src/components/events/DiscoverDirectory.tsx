@@ -39,6 +39,7 @@ const REGION_LABELS: Record<CityCount["region"], string> = {
 };
 
 const REGION_TABS: CityCount["region"][] = ["na", "sa", "eu", "asia-pacific", "af", "virtual"];
+const COLLAPSED_CITY_COUNT = 12;
 
 export function DiscoverDirectory({
   popularByCity,
@@ -57,6 +58,7 @@ export function DiscoverDirectory({
 
   const [city, setCity] = useState(defaultCity);
   const [region, setRegion] = useState<CityCount["region"]>("na");
+  const [expandedRegions, setExpandedRegions] = useState<Partial<Record<CityCount["region"], boolean>>>({});
 
   const popular = popularByCityMap.get(city) ?? [];
 
@@ -70,6 +72,9 @@ export function DiscoverDirectory({
         }),
     [cities, region]
   );
+  const regionExpanded = expandedRegions[region] ?? false;
+  const visibleCities = regionExpanded ? cityList : cityList.slice(0, COLLAPSED_CITY_COUNT);
+  const hiddenCityCount = Math.max(cityList.length - visibleCities.length, 0);
 
   return (
     <div className="bg-white text-zinc-950 -mt-px">
@@ -211,9 +216,33 @@ export function DiscoverDirectory({
               No cities listed in this region yet.
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-              {cityList.map((c) => <CityTile key={c.slug} city={c} />)}
-            </div>
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                {visibleCities.map((c) => <CityTile key={c.slug} city={c} />)}
+              </div>
+              {cityList.length > COLLAPSED_CITY_COUNT && (
+                <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExpandedRegions((current) => ({
+                        ...current,
+                        [region]: !regionExpanded,
+                      }))
+                    }
+                    className="inline-flex h-11 items-center justify-center rounded-full border border-zinc-300 bg-white px-5 text-sm font-semibold text-zinc-950 transition hover:border-zinc-950 active:scale-[0.98]"
+                    aria-expanded={regionExpanded}
+                  >
+                    {regionExpanded ? "Show fewer cities" : `Show ${hiddenCityCount} more cities`}
+                  </button>
+                  {!regionExpanded && (
+                    <span className="text-xs text-zinc-500">
+                      Showing top {visibleCities.length} by upcoming events
+                    </span>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
       </section>

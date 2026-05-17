@@ -141,7 +141,7 @@ export default function HeroMapImpl({ variant = "panel" }: HeroMapImplProps) {
         clusterRadius: 44,
       });
 
-      // Inactive open hubs — small gray dots, names appear when zoomed in
+      // Inactive open hubs — small gray dots.
       map.addLayer({
         id: "inactive-dots",
         type: "circle",
@@ -152,25 +152,6 @@ export default function HeroMapImpl({ variant = "panel" }: HeroMapImplProps) {
           "circle-opacity": 0.55,
           "circle-stroke-color": "#ffffff",
           "circle-stroke-width": 1,
-        },
-      });
-      map.addLayer({
-        id: "inactive-labels",
-        type: "symbol",
-        source: "hubs-inactive",
-        minzoom: 4.2,
-        layout: {
-          "text-field": ["get", "name"],
-          "text-font": ["Noto Sans Regular"],
-          "text-size": 11,
-          "text-offset": [0, 1.1],
-          "text-anchor": "top",
-          "text-allow-overlap": false,
-        },
-        paint: {
-          "text-color": "#52525b",
-          "text-halo-color": "#ffffff",
-          "text-halo-width": 1.4,
         },
       });
 
@@ -226,25 +207,6 @@ export default function HeroMapImpl({ variant = "panel" }: HeroMapImplProps) {
           "circle-stroke-width": 2.5,
           "circle-opacity": 1,
           "circle-radius-transition": { duration: 220, delay: 0 },
-        },
-      });
-      map.addLayer({
-        id: "active-label",
-        type: "symbol",
-        source: "hubs-active",
-        filter: ["!", ["has", "point_count"]],
-        layout: {
-          "text-field": ["get", "name"],
-          "text-font": ["Noto Sans Bold"],
-          "text-size": 12,
-          "text-offset": [0, 1.4],
-          "text-anchor": "top",
-          "text-allow-overlap": true,
-        },
-        paint: {
-          "text-color": "#18181b",
-          "text-halo-color": "#ffffff",
-          "text-halo-width": 1.8,
         },
       });
 
@@ -633,41 +595,6 @@ export default function HeroMapImpl({ variant = "panel" }: HeroMapImplProps) {
         </div>
       )}
 
-      {immersive && active.length > 0 && (
-        <div className="absolute bottom-5 left-5 right-5 z-10 flex gap-2 overflow-x-auto pb-1 md:bottom-6 md:left-[32%] md:right-36">
-          {active.map((city) => (
-            <button
-              key={city.slug}
-              type="button"
-              onClick={() => focusCity(city)}
-              className="inline-flex h-10 shrink-0 items-center gap-2 rounded-full border border-white/15 bg-zinc-950/80 px-4 text-sm font-semibold text-white shadow-2xl backdrop-blur-md transition hover:bg-white/[0.12] active:scale-[0.98]"
-            >
-              {city.name}
-              <span className="rounded-full bg-white/[0.14] px-2 py-0.5 text-[11px]">
-                {city.eventCount}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Bottom-right CTA */}
-      <div className={cn("absolute z-10", immersive ? "bottom-6 right-5 hidden sm:block" : "bottom-4 right-4")}>
-        <Link
-          href="/events"
-          className={cn(
-            "inline-flex h-10 items-center gap-2 rounded-full px-5 text-sm font-semibold shadow-lg transition-colors active:scale-[0.98]",
-            immersive ? "bg-white text-zinc-950 hover:bg-orange-200" : "bg-zinc-950 text-white hover:bg-orange-500"
-          )}
-        >
-          Browse all
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="5" y1="12" x2="19" y2="12" />
-            <polyline points="12 5 19 12 12 19" />
-          </svg>
-        </Link>
-      </div>
-
     </div>
   );
 }
@@ -730,11 +657,9 @@ function HeroMapFallback({
             top: `${28 + ((index * 13) % 46)}%`,
           }}
         >
+          <span className="sr-only">View events in {city.name}</span>
           <span className="absolute -inset-4 rounded-full bg-orange-500/20 blur-md transition group-hover:bg-orange-500/35" />
           <span className="relative flex h-4 w-4 rounded-full bg-violet-600 ring-4 ring-white shadow-lg" />
-          <span className="absolute left-6 top-1/2 -translate-y-1/2 whitespace-nowrap rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-zinc-800 shadow-md ring-1 ring-zinc-200">
-            {city.name} · {city.eventCount}
-          </span>
         </Link>
       ))}
 
@@ -746,22 +671,6 @@ function HeroMapFallback({
       )}>
         <span className="h-2 w-2 rounded-full bg-orange-500" />
         Live · {cities.length} {cities.length === 1 ? "city" : "cities"} · {totalEvents} events
-      </div>
-
-      <div className={cn("absolute z-10", immersive ? "bottom-6 right-5 hidden sm:block" : "bottom-4 right-4")}>
-        <Link
-          href="/events"
-          className={cn(
-            "inline-flex h-10 items-center gap-2 rounded-full px-5 text-sm font-semibold shadow-lg transition-colors active:scale-[0.98]",
-            immersive ? "bg-white text-zinc-950 hover:bg-orange-200" : "bg-zinc-950 text-white hover:bg-orange-500"
-          )}
-        >
-          Browse all
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="5" y1="12" x2="19" y2="12" />
-            <polyline points="12 5 19 12 12 19" />
-          </svg>
-        </Link>
       </div>
     </div>
   );

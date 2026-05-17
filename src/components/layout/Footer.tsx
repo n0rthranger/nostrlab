@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DonateButton } from "@/components/layout/DonateButton";
 
 export function Footer() {
   return (
@@ -11,6 +12,9 @@ export function Footer() {
           <p className="mt-3 text-muted leading-relaxed max-w-md">
             Open-source meetup tools for Nostr communities. Publish events, collect RSVPs, and run check-in from one place.
           </p>
+          <div className="mt-5">
+            <DonateButton />
+          </div>
         </div>
         <Col title="Product">
           <li><Link href="/events" className="hover:text-fg">Discover</Link></li>
@@ -40,8 +44,9 @@ export function Footer() {
         </Col>
       </div>
       <div className="border-t border-border">
-        <div className="max-w-6xl mx-auto px-5 py-4 text-xs text-muted">
+        <div className="max-w-6xl mx-auto px-5 py-4 text-xs text-muted flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <span>© {new Date().getFullYear()} NostrLab · MIT</span>
+          <span>Open source under n0rthranger</span>
         </div>
       </div>
     </footer>

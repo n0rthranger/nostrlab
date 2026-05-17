@@ -12,7 +12,7 @@ interface Props {
 }
 
 export function LandingPage({ upcoming, totalCommunities, totalRsvps }: Props) {
-  const featured = upcoming;
+  const featured = upcoming.slice(0, 32);
   const sampledEvents = randomEvents(upcoming, 4);
   const discoveryEvents = sampledEvents.slice(0, 3);
   const hostEvent = sampledEvents[3] ?? discoveryEvents[0] ?? null;
@@ -121,12 +121,21 @@ export function LandingPage({ upcoming, totalCommunities, totalRsvps }: Props) {
             <div
               className="global-event-carousel mt-12 -mx-6 overflow-x-auto px-6 pb-5 md:-mx-10 md:px-10"
               aria-label="Global events"
+              data-moving={featured.length > 1 ? "true" : undefined}
+              style={{ "--carousel-duration": `${Math.max(34, featured.length * 6)}s` } as CSSProperties}
             >
-              <div className="flex w-max gap-4">
+              <div className="global-event-carousel-track flex w-max gap-4">
                 {featured.map((event) => (
                   <EventReelCard
                     key={event.id}
                     event={event}
+                  />
+                ))}
+                {featured.length > 1 && featured.map((event) => (
+                  <EventReelCard
+                    key={`loop-${event.id}`}
+                    event={event}
+                    hiddenFromAssistiveTech
                   />
                 ))}
               </div>
