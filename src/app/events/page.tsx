@@ -23,6 +23,7 @@ async function getData() {
   const eventWhere = {
     startsAt: { gte: new Date() },
     status: "ACTIVE" as const,
+    duplicateOfId: null,
     ...(banned.size > 0 ? { organizerPubkey: { notIn: [...banned] } } : {}),
   };
 
@@ -184,6 +185,7 @@ async function getSearchResults(sp: Record<string, string | undefined>) {
   const banned = await bannedSet();
   const where: Prisma.EventWhereInput = {};
   const and: Prisma.EventWhereInput[] = [];
+  where.duplicateOfId = null;
   if (f.city) {
     and.push({
       OR: [

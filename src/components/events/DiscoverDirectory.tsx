@@ -29,6 +29,12 @@ interface Props {
   cities: CityCount[];
 }
 
+interface PopularCityOption {
+  name: string;
+  count: number;
+  region?: CityCount["region"];
+}
+
 const REGION_LABELS: Record<CityCount["region"], string> = {
   na: "North America",
   sa: "South America",
@@ -40,6 +46,8 @@ const REGION_LABELS: Record<CityCount["region"], string> = {
 
 const REGION_TABS: CityCount["region"][] = ["na", "sa", "eu", "asia-pacific", "af", "virtual"];
 const COLLAPSED_CITY_COUNT = 12;
+const QUICK_CITY_COUNT = 8;
+const POPULAR_EVENT_PREVIEW_COUNT = 8;
 
 export function DiscoverDirectory({
   popularByCity,
@@ -57,10 +65,41 @@ export function DiscoverDirectory({
   const popularCities = useMemo(() => [...popularByCityMap.keys()], [popularByCityMap]);
 
   const [city, setCity] = useState(defaultCity);
+  const [cityQuery, setCityQuery] = useState("");
   const [region, setRegion] = useState<CityCount["region"]>("na");
   const [expandedRegions, setExpandedRegions] = useState<Partial<Record<CityCount["region"], boolean>>>({});
 
   const popular = popularByCityMap.get(city) ?? [];
+  const popularPreview = popular.slice(0, POPULAR_EVENT_PREVIEW_COUNT);
+  const selectedCityHref = city === "All" ? "/events?view=all&limit=200" : `/events?city=${encodeURIComponent(city)}&limit=200`;
+
+  const popularCityOptions = useMemo<PopularCityOption[]>(() => {
+    const cityMeta = new Map(cities.map((c) => [c.name, c]));
+    return popularCities.map((name) => {
+      const meta = cityMeta.get(name);
+      return {
+        name,
+        count: popularByCityMap.get(name)?.length ?? 0,
+        region: name === "All" ? undefined : meta?.region,
+      };
+    });
+  }, [cities, popularByCityMap, popularCities]);
+
+  const quickCities = useMemo(
+    () =>
+      popularCityOptions
+        .filter((option) => option.name !== "All" && option.name !== "Other")
+        .slice(0, QUICK_CITY_COUNT),
+    [popularCityOptions]
+  );
+
+  const pickerResults = useMemo(() => {
+    const query = cityQuery.trim().toLowerCase();
+    if (!query) return [];
+    return popularCityOptions
+      .filter((option) => option.name.toLowerCase().includes(query))
+      .slice(0, 10);
+  }, [cityQuery, popularCityOptions]);
 
   const cityList = useMemo(
     () =>
@@ -75,6 +114,11 @@ export function DiscoverDirectory({
   const regionExpanded = expandedRegions[region] ?? false;
   const visibleCities = regionExpanded ? cityList : cityList.slice(0, COLLAPSED_CITY_COUNT);
   const hiddenCityCount = Math.max(cityList.length - visibleCities.length, 0);
+
+  function selectCity(nextCity: string) {
+    setCity(nextCity);
+    setCityQuery("");
+  }
 
   return (
     <div className="bg-white text-zinc-950 -mt-px">
@@ -101,34 +145,57 @@ export function DiscoverDirectory({
 
       {/* POPULAR EVENTS */}
       <section className="border-b border-zinc-200 bg-white">
-        <div className="max-w-[1280px] mx-auto px-6 md:px-10 pt-12 md:pt-16 pb-6">
-          <div className="flex items-baseline justify-between gap-4 flex-wrap mb-6">
-            <h2 className="font-semibold tracking-[-0.025em] leading-[1] text-3xl md:text-4xl text-zinc-950">
-              Popular Events
-            </h2>
-            <Link
-              href={city === "All" ? "/events?view=all&limit=200" : `/events?city=${encodeURIComponent(city)}&limit=200`}
-              className="text-sm font-semibold text-zinc-700 hover:text-zinc-950 transition-colors"
-            >
-              View All →
-            </Link>
+        <div className="max-w-[1280px] mx-auto px-6 md:px-10 py-12 md:py-16">
+          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)] lg:items-end">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                Popular now
+              </div>
+              <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h2 className="font-semibold tracking-[-0.025em] leading-[1] text-3xl md:text-4xl text-zinc-950">
+                    {city === "All" ? "Popular Events" : city}
+                  </h2>
+                  <p className="mt-3 max-w-2xl text-sm leading-relaxed text-zinc-600 md:text-base">
+                    {city === "All"
+                      ? "The strongest upcoming events across the network."
+                      : `${formatCount(popular.length)} upcoming ${popular.length === 1 ? "event" : "events"} in this area.`}
+                  </p>
+                </div>
+                <Link
+                  href={selectedCityHref}
+                  className="inline-flex h-10 shrink-0 items-center justify-center rounded-full border border-zinc-300 px-4 text-sm font-semibold text-zinc-950 transition hover:border-zinc-950 active:scale-[0.98]"
+                >
+                  View all
+                </Link>
+              </div>
+            </div>
+
+            {popularCities.length > 1 && (
+              <CityPicker
+                query={cityQuery}
+                results={pickerResults}
+                selectedCity={city}
+                onQueryChange={setCityQuery}
+                onSelect={selectCity}
+              />
+            )}
           </div>
 
-          {popularCities.length > 1 && (
-            <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:thin]">
-              {popularCities.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => setCity(c)}
-                  className={cn(
-                    "shrink-0 h-10 px-5 rounded-full text-sm font-semibold transition-colors border",
-                    city === c
-                      ? "bg-zinc-950 text-white border-zinc-950"
-                      : "bg-white text-zinc-700 border-zinc-200 hover:border-zinc-950"
-                  )}
-                >
-                  {c}
-                </button>
+          {quickCities.length > 0 && (
+            <div className="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <QuickCityButton
+                option={popularCityOptions[0]}
+                active={city === "All"}
+                onClick={() => selectCity("All")}
+              />
+              {quickCities.slice(0, QUICK_CITY_COUNT - 1).map((option) => (
+                <QuickCityButton
+                  key={option.name}
+                  option={option}
+                  active={city === option.name}
+                  onClick={() => selectCity(option.name)}
+                />
               ))}
             </div>
           )}
@@ -152,9 +219,9 @@ export function DiscoverDirectory({
             </div>
           </div>
         ) : (
-          <div className="overflow-x-auto pb-12 [scrollbar-width:thin]">
-            <div className="flex gap-4 px-6 md:px-10 max-w-[1280px] mx-auto min-w-fit">
-              {popular.map((e) => <PopularEventCard key={e.id} event={e} />)}
+          <div className="max-w-[1280px] mx-auto px-6 md:px-10 pb-14 md:pb-16">
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              {popularPreview.map((e) => <PopularEventCard key={e.id} event={e} />)}
             </div>
           </div>
         )}
@@ -252,6 +319,118 @@ export function DiscoverDirectory({
 
 // ─── Sub-components ────────────────────────────────────────────────
 
+function CityPicker({
+  query,
+  results,
+  selectedCity,
+  onQueryChange,
+  onSelect,
+}: {
+  query: string;
+  results: PopularCityOption[];
+  selectedCity: string;
+  onQueryChange: (value: string) => void;
+  onSelect: (city: string) => void;
+}) {
+  const hasQuery = query.trim().length > 0;
+
+  return (
+    <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+      <label htmlFor="popular-city-search" className="sr-only">
+        Search popular cities
+      </label>
+      <div className="relative">
+        <svg
+          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <circle cx="11" cy="11" r="7" />
+          <path d="m20 20-3.5-3.5" />
+        </svg>
+        <input
+          id="popular-city-search"
+          value={query}
+          onChange={(event) => onQueryChange(event.target.value)}
+          placeholder="Search city"
+          className="h-11 rounded-md border-zinc-200 bg-white pl-9 pr-3 text-sm"
+        />
+      </div>
+      {hasQuery && (
+        <div className="mt-3 max-h-[268px] overflow-y-auto rounded-md border border-zinc-200 bg-white [scrollbar-width:thin]">
+          {results.length === 0 ? (
+            <div className="px-3 py-4 text-sm text-zinc-500">
+              No matching cities
+            </div>
+          ) : (
+            results.map((option) => (
+              <button
+                key={option.name}
+                type="button"
+                onClick={() => onSelect(option.name)}
+                className={cn(
+                  "flex w-full items-center justify-between gap-3 border-b border-zinc-100 px-3 py-2.5 text-left text-sm last:border-b-0 transition hover:bg-zinc-50",
+                  selectedCity === option.name && "bg-zinc-950 text-white hover:bg-zinc-900"
+                )}
+              >
+                <span className="min-w-0">
+                  <span className="block truncate font-semibold">{option.name}</span>
+                  <span className={cn("mt-0.5 block text-xs", selectedCity === option.name ? "text-zinc-300" : "text-zinc-500")}>
+                    {option.region ? REGION_LABELS[option.region] : "Network-wide"}
+                  </span>
+                </span>
+                <span className={cn("shrink-0 text-xs font-semibold", selectedCity === option.name ? "text-zinc-200" : "text-zinc-500")}>
+                  {formatCount(option.count)}
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QuickCityButton({
+  option,
+  active,
+  onClick,
+}: {
+  option: PopularCityOption;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "rounded-lg border p-3 text-left transition active:scale-[0.99] sm:p-4",
+        active
+          ? "border-zinc-950 bg-zinc-950 text-white shadow-sm"
+          : "border-zinc-200 bg-white text-zinc-950 hover:border-zinc-950"
+      )}
+    >
+      <span className="flex items-start justify-between gap-3">
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold">{option.name}</span>
+          <span className={cn("mt-1 block text-xs", active ? "text-zinc-300" : "text-zinc-500")}>
+            {option.region ? REGION_LABELS[option.region] : "Network-wide"}
+          </span>
+        </span>
+        <span className={cn("shrink-0 text-xs font-semibold", active ? "text-zinc-200" : "text-zinc-500")}>
+          {formatCount(option.count)}
+        </span>
+      </span>
+    </button>
+  );
+}
+
 function PopularEventCard({ event }: { event: EventListItemDTO }) {
   const grad = eventGradient(event.id);
   const start = new Date(event.startsAt);
@@ -259,7 +438,7 @@ function PopularEventCard({ event }: { event: EventListItemDTO }) {
   today.setHours(0, 0, 0, 0);
   const dayOnly = new Date(start.getFullYear(), start.getMonth(), start.getDate());
   const diff = Math.round((dayOnly.getTime() - today.getTime()) / 86_400_000);
-  const time = start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const time = start.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   const dateLabel =
     diff === 0 ? "Today"
     : diff === 1 ? "Tomorrow"
@@ -268,9 +447,9 @@ function PopularEventCard({ event }: { event: EventListItemDTO }) {
   return (
     <Link
       href={`/events/${event.id}`}
-      className="group shrink-0 w-[300px] md:w-[320px]"
+      className="group min-w-0"
     >
-      <div className="aspect-[4/3] rounded-2xl overflow-hidden bg-zinc-100 mb-3">
+      <div className="aspect-[4/3] rounded-lg overflow-hidden bg-zinc-100 mb-3">
         {event.bannerUrl ? (
           <img
             src={event.bannerUrl}

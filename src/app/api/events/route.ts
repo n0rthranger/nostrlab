@@ -26,6 +26,7 @@ export async function GET(req: NextRequest) {
 
   const where: Prisma.EventWhereInput = {};
   const and: Prisma.EventWhereInput[] = [];
+  where.duplicateOfId = null;
   if (f.city) {
     and.push({
       OR: [
@@ -135,6 +136,17 @@ export async function POST(req: NextRequest) {
 
   if (result.status === "older") {
     return NextResponse.json({ id: result.id, nostrId: result.nostrId, ignored: "older" });
+  }
+
+  if (result.status === "duplicate") {
+    return NextResponse.json(
+      {
+        error: "DUPLICATE_EVENT",
+        message: "A matching event already exists.",
+        existingEvent: result.duplicate,
+      },
+      { status: 409 }
+    );
   }
 
   if (result.source === "nostrlab") {

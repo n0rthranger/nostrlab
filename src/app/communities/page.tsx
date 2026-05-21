@@ -14,7 +14,7 @@ async function loadCommunities() {
   });
   const upcomingCounts = await prisma.event.groupBy({
     by: ["communityId"],
-    where: { communityId: { in: communities.map((c) => c.id) }, startsAt: { gte: new Date() } },
+    where: { communityId: { in: communities.map((c) => c.id) }, startsAt: { gte: new Date() }, duplicateOfId: null },
     _count: { _all: true },
   });
   const map = new Map(upcomingCounts.map((u) => [u.communityId!, u._count._all]));

@@ -102,7 +102,7 @@ export async function PATCH(
   }
 
   const upcomingCount = await prisma.event.count({
-    where: { communityId: id, startsAt: { gte: new Date() } },
+    where: { communityId: id, startsAt: { gte: new Date() }, duplicateOfId: null },
   });
   return NextResponse.json({ community: communityToDTO(updated, upcomingCount) });
 }

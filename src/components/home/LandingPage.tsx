@@ -3,15 +3,17 @@ import type { CSSProperties, ReactNode } from "react";
 import { eventGradient } from "@/lib/gradient";
 import type { EventListItemDTO } from "@/types";
 import { HeroMap } from "./HeroMap";
+import { LandingMetrics } from "./LandingMetrics";
 import { LightningConstellation } from "./LightningConstellation";
 
 interface Props {
   upcoming: EventListItemDTO[];
+  totalUpcoming: number;
   totalCommunities: number;
   totalRsvps: number;
 }
 
-export function LandingPage({ upcoming, totalCommunities, totalRsvps }: Props) {
+export function LandingPage({ upcoming, totalUpcoming, totalCommunities, totalRsvps }: Props) {
   const featured = upcoming.slice(0, 32);
   const sampledEvents = randomEvents(upcoming, 4);
   const discoveryEvents = sampledEvents.slice(0, 3);
@@ -65,14 +67,11 @@ export function LandingPage({ upcoming, totalCommunities, totalRsvps }: Props) {
         </div>
       </section>
 
-      <section className="border-y border-white/10 bg-zinc-950">
-        <div className="mx-auto grid max-w-[1500px] grid-cols-2 gap-px bg-white/10 md:grid-cols-4">
-          <Metric label="Upcoming" value={upcoming.length} />
-          <Metric label="Communities" value={totalCommunities} />
-          <Metric label="Recent RSVPs" value={totalRsvps} />
-          <Metric label="NostrLab fee" value={0} suffix="%" accent />
-        </div>
-      </section>
+      <LandingMetrics
+        totalUpcoming={totalUpcoming}
+        totalCommunities={totalCommunities}
+        totalRsvps={totalRsvps}
+      />
 
       <SceneSection
         scene="Discovery"
@@ -121,21 +120,12 @@ export function LandingPage({ upcoming, totalCommunities, totalRsvps }: Props) {
             <div
               className="global-event-carousel mt-12 -mx-6 overflow-x-auto px-6 pb-5 md:-mx-10 md:px-10"
               aria-label="Global events"
-              data-moving={featured.length > 1 ? "true" : undefined}
-              style={{ "--carousel-duration": `${Math.max(34, featured.length * 6)}s` } as CSSProperties}
             >
               <div className="global-event-carousel-track flex w-max gap-4">
                 {featured.map((event) => (
                   <EventReelCard
                     key={event.id}
                     event={event}
-                  />
-                ))}
-                {featured.length > 1 && featured.map((event) => (
-                  <EventReelCard
-                    key={`loop-${event.id}`}
-                    event={event}
-                    hiddenFromAssistiveTech
                   />
                 ))}
               </div>
@@ -235,28 +225,6 @@ export function LandingPage({ upcoming, totalCommunities, totalRsvps }: Props) {
           </div>
         </div>
       </section>
-    </div>
-  );
-}
-
-function Metric({
-  label,
-  value,
-  suffix,
-  accent,
-}: {
-  label: string;
-  value: number;
-  suffix?: string;
-  accent?: boolean;
-}) {
-  return (
-    <div className="bg-zinc-950 px-6 py-8 md:px-10">
-      <div className={accent ? "cinematic-number text-5xl font-semibold leading-none text-orange-400" : "cinematic-number text-5xl font-semibold leading-none text-white"}>
-        {value.toLocaleString()}
-        {suffix && <span className="text-2xl">{suffix}</span>}
-      </div>
-      <div className="mt-2 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">{label}</div>
     </div>
   );
 }
@@ -514,13 +482,7 @@ function HostAction({ href, label, value }: { href: string; label: string; value
   );
 }
 
-function EventReelCard({
-  event,
-  hiddenFromAssistiveTech,
-}: {
-  event: EventListItemDTO;
-  hiddenFromAssistiveTech?: boolean;
-}) {
+function EventReelCard({ event }: { event: EventListItemDTO }) {
   const grad = eventGradient(event.id);
   const start = new Date(event.startsAt);
   const dateLabel = start.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
@@ -530,7 +492,6 @@ function EventReelCard({
     <Link
       href={`/events/${event.id}`}
       className="group block w-[310px] shrink-0 snap-start md:w-[380px]"
-      {...(hiddenFromAssistiveTech ? { "aria-hidden": true, tabIndex: -1 } : {})}
     >
       <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white transition group-hover:border-zinc-950">
         <div className="aspect-[16/11] overflow-hidden bg-zinc-100">

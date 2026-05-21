@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 const NAV = [
   { href: "/events", label: "Discover" },
   { href: "/communities", label: "Communities" },
+  { href: "/faq", label: "FAQ" },
   { href: "/dashboard", label: "My events" },
 ];
 
@@ -31,7 +32,7 @@ export function Header() {
   return (
     <>
       <header className="sticky top-0 z-30 border-b border-white/10 bg-zinc-950/95 text-white backdrop-blur-md">
-        <div className="max-w-[1400px] mx-auto px-4 sm:px-5 md:px-10 h-14 flex items-center gap-3 md:gap-6 overflow-hidden">
+        <div className="max-w-[1400px] mx-auto px-4 sm:px-5 md:px-10 h-14 flex items-center gap-3 md:gap-6">
           <Link href="/" className="font-semibold text-base shrink-0">
             NostrLab
           </Link>

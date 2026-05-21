@@ -8,7 +8,7 @@ import type { EventListItemDTO } from "@/types";
 // Compact list row — used in dashboard sections and dense day groupings.
 export function EventListingRow({ event }: { event: EventListItemDTO }) {
   const start = new Date(event.startsAt);
-  const time = start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const time = start.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   const grad = eventGradient(event.id);
 
   return (

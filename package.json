@@ -25,6 +25,7 @@
     "test:e2e:ticket-proof": "tsx scripts/e2e-ticket-proof.ts",
     "test:load": "tsx scripts/load-smoke.ts",
     "test:lnurl:live": "tsx scripts/verify-live-lnurl.ts",
+    "events:dedupe": "tsx scripts/mark-event-duplicates.ts",
     "payments:reconcile": "tsx scripts/reconcile-payments.ts",
     "payments:reconcile:loop": "tsx scripts/reconcile-payments.ts --loop",
     "release:check": "tsx scripts/release-check.ts",

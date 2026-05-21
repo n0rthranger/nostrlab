@@ -26,6 +26,18 @@ export const eventCreateSchema = z.object({
   signedEvent: nostrEventSchema,
 });
 
+export const eventDuplicateCheckSchema = z.object({
+  title: z.string().min(1).max(140),
+  startsAt: z.string().min(1),
+  mode: z.enum(EVENT_MODES),
+  city: z.string().max(200).nullable().optional(),
+  venue: z.string().max(300).nullable().optional(),
+  geohash: z.string().max(32).nullable().optional(),
+  organizerPubkey: hex64.nullable().optional(),
+  dTag: z.string().max(200).nullable().optional(),
+  excludeEventId: z.string().nullable().optional(),
+});
+
 export const rsvpCreateSchema = z.object({
   signedEvent: nostrEventSchema,
 });

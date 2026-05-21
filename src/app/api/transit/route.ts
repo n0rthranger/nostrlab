@@ -54,6 +54,7 @@ export async function GET() {
   const where = {
     startsAt: { gte: new Date() },
     status: "ACTIVE" as const,
+    duplicateOfId: null,
     ...(banned.size > 0 ? { organizerPubkey: { notIn: [...banned] } } : {}),
   };
 

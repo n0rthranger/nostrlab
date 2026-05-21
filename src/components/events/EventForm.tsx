@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
@@ -38,6 +39,22 @@ interface EventFormProps {
   submitLabel?: string;
   allowRecurrence?: boolean;
 }
+
+interface DuplicateCheckMatch {
+  id: string;
+  title: string;
+  startsAt: string;
+  city: string | null;
+  venue: string | null;
+  mode: "ONLINE" | "OFFLINE" | "HYBRID";
+}
+
+type DuplicateCheckState =
+  | { status: "idle" }
+  | { status: "checking" }
+  | { status: "clear" }
+  | { status: "match"; match: DuplicateCheckMatch }
+  | { status: "error" };
 
 function toDatetimeLocal(value?: string | null): string {
   if (!value) return "";
@@ -78,6 +95,7 @@ export function EventForm({ initialEvent, submitLabel, allowRecurrence = true }:
   const [communities, setCommunities] = useState<CommunityDTO[]>([]);
   const [recurrence, setRecurrence] = useState<"none" | "weekly" | "monthly">("none");
   const [recurrenceCount, setRecurrenceCount] = useState("4");
+  const [duplicateCheck, setDuplicateCheck] = useState<DuplicateCheckState>({ status: "idle" });
   const isEditing = !!initialEvent?.id && !!initialEvent.dTag;
   // Nominatim suggestion can override the hub-based center. `precise` tells
   // the picker to also drop a pin (street/address level) instead of just
@@ -103,6 +121,49 @@ export function EventForm({ initialEvent, submitLabel, allowRecurrence = true }:
       .catch(() => setCommunities([]));
   }, [identity]);
 
+  useEffect(() => {
+    const cleanTitle = title.trim();
+    const start = startsAt ? new Date(startsAt) : null;
+    const hasLocation = mode === "online" || !!city.trim() || !!venue.trim() || !!geohash;
+    if (!cleanTitle || !start || Number.isNaN(start.getTime()) || !hasLocation) {
+      setDuplicateCheck({ status: "idle" });
+      return;
+    }
+
+    const controller = new AbortController();
+    setDuplicateCheck({ status: "checking" });
+    const timeout = window.setTimeout(async () => {
+      try {
+        const res = await fetch("/api/events/duplicates", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            title: cleanTitle,
+            startsAt: start.toISOString(),
+            mode,
+            city: city.trim() || null,
+            venue: venue.trim() || null,
+            geohash,
+            organizerPubkey: identity?.pubkey ?? null,
+            dTag: isEditing ? initialEvent?.dTag ?? null : null,
+            excludeEventId: initialEvent?.id ?? null,
+          }),
+        });
+        if (!res.ok) throw new Error("duplicate check failed");
+        const json = (await res.json()) as { duplicate: DuplicateCheckMatch | null };
+        setDuplicateCheck(json.duplicate ? { status: "match", match: json.duplicate } : { status: "clear" });
+      } catch (error) {
+        if ((error as Error).name !== "AbortError") setDuplicateCheck({ status: "error" });
+      }
+    }, 450);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeout);
+    };
+  }, [title, startsAt, mode, city, venue, geohash, identity?.pubkey, isEditing, initialEvent?.dTag, initialEvent?.id]);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
@@ -119,6 +180,10 @@ export function EventForm({ initialEvent, submitLabel, allowRecurrence = true }:
       : null;
     if (communitySlug && !selectedCommunity) {
       setErr("Select an approved community calendar again before publishing.");
+      return;
+    }
+    if (duplicateCheck.status === "match") {
+      setErr("A matching event already exists. Open the existing event instead of publishing a duplicate.");
       return;
     }
 
@@ -165,15 +230,29 @@ export function EventForm({ initialEvent, submitLabel, allowRecurrence = true }:
           recurrenceFrequency: recurrenceGroupId ? recurrenceFrequency : undefined,
         });
         const signed = await signEvent(unsigned);
-        const publishP = clientPublish(signed);
         const indexRes = await fetch("/api/events", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ signedEvent: signed }),
         });
-        await publishP;
-        if (!indexRes.ok) throw new Error(`Indexing failed: ${(await indexRes.text()) || indexRes.status}`);
+        if (!indexRes.ok) {
+          const responseText = await indexRes.text();
+          let message = responseText || String(indexRes.status);
+          try {
+            const json = JSON.parse(responseText) as { message?: string; existingEvent?: DuplicateCheckMatch };
+            if (indexRes.status === 409 && json.existingEvent) {
+              setDuplicateCheck({ status: "match", match: json.existingEvent });
+              message = json.message ?? "A matching event already exists.";
+            } else if (json.message) {
+              message = json.message;
+            }
+          } catch {
+            // Keep the raw response text.
+          }
+          throw new Error(`Indexing failed: ${message}`);
+        }
         const json = (await indexRes.json()) as { id: string };
         firstId ??= json.id;
+        clientPublish(signed).catch(() => {});
       }
       router.push(isEditing && initialEvent?.id ? `/dashboard/events/${initialEvent.id}` : `/events/${firstId}`);
     } catch (e2) {
@@ -336,6 +415,9 @@ export function EventForm({ initialEvent, submitLabel, allowRecurrence = true }:
       </Section>
 
       {err && <div className="rounded-lg bg-dangerSoft text-danger px-4 py-3 text-sm">{err}</div>}
+      {duplicateCheck.status === "match" && (
+        <DuplicateWarning match={duplicateCheck.match} />
+      )}
       {!hasSigner && (
         <div className="rounded-lg bg-surface2 text-fg2 px-4 py-3 text-sm">
           No NIP-07 signer detected. Install Alby or nos2x to publish.
@@ -344,11 +426,36 @@ export function EventForm({ initialEvent, submitLabel, allowRecurrence = true }:
 
       <div className="flex justify-end gap-2 pt-4 border-t border-border">
         <Button type="button" variant="ghost" onClick={() => router.back()}>Cancel</Button>
-        <Button type="submit" loading={busy} disabled={busy} size="lg">
+        <Button type="submit" loading={busy} disabled={busy || duplicateCheck.status === "match"} size="lg">
           {submitLabel ?? (isEditing ? "Publish update" : "Publish event")}
         </Button>
       </div>
     </form>
+  );
+}
+
+function DuplicateWarning({ match }: { match: DuplicateCheckMatch }) {
+  const start = new Date(match.startsAt);
+  const when = Number.isNaN(start.getTime())
+    ? null
+    : start.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  const location = match.mode === "ONLINE" ? "Online" : [match.venue, match.city].filter(Boolean).join(", ");
+
+  return (
+    <div className="rounded-xl border border-accent/25 bg-accentSoft/35 px-4 py-3 flex items-start gap-3">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="text-accent mt-0.5 shrink-0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <div className="min-w-0 flex-1 text-sm">
+        <div className="font-medium text-fg">Matching event already exists</div>
+        <div className="mt-1 text-xs text-muted">
+          <span className="font-medium text-fg2">{match.title}</span>
+          {when ? ` · ${when}` : ""}
+          {location ? ` · ${location}` : ""}
+        </div>
+        <Link href={`/events/${match.id}`} className="mt-2 inline-flex h-8 items-center rounded-full border border-border bg-surface px-3 text-xs font-medium text-fg hover:bg-surface2">
+          Open existing event
+        </Link>
+      </div>
+    </div>
   );
 }
 

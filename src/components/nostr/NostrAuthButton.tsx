@@ -31,25 +31,15 @@ export function NostrAuthButton() {
             finally { setBusy(false); }
           }}
           disabled={busy}
-          title={hasSigner ? "Sign in via NIP-07" : "Install Alby or nos2x"}
-          className="h-9 w-9 sm:w-auto sm:px-4 inline-flex items-center justify-center gap-2 rounded-full bg-white text-zinc-950 text-sm font-medium hover:bg-zinc-200 active:scale-[0.98] transition disabled:opacity-50 shadow-soft focus-ring"
+          title="Sign in"
+          className="inline-flex h-9 shrink-0 items-center justify-center rounded-full bg-white px-4 text-[13px] font-semibold text-zinc-950 shadow-soft transition hover:bg-zinc-200 active:scale-[0.98] disabled:opacity-50 sm:text-sm focus-ring"
         >
           {busy ? (
             <>
-              <span className="inline-block h-3 w-3 rounded-full border-2 border-current border-t-transparent animate-spin" />
-              <span className="hidden sm:inline">Signing in</span>
+              <span className="truncate whitespace-nowrap">Signing in</span>
             </>
           ) : (
-            <>
-              <svg className="sm:hidden" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M15 7a2 2 0 1 0-2-2" />
-                <path d="M17.5 8.5 21 5" />
-                <path d="M11 13a5 5 0 1 0 4 4.9" />
-                <path d="m15 13 5 5" />
-                <path d="m20 13-5 5" />
-              </svg>
-              <span className="hidden sm:inline">{hasSigner ? "Sign in" : "Install signer"}</span>
-            </>
+            <span className="truncate whitespace-nowrap">Sign in</span>
           )}
         </button>
         {err && <div className="text-[11px] text-danger max-w-[260px] text-right">{err}</div>}
@@ -61,7 +51,10 @@ export function NostrAuthButton() {
   return (
     <div className="relative">
       <button
+        type="button"
         onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-haspopup="menu"
         className="flex items-center gap-2 pr-3 pl-1 h-9 rounded-full hover:bg-surface2 transition-colors focus-ring"
       >
         <Avatar
@@ -77,8 +70,9 @@ export function NostrAuthButton() {
       </button>
       {open && (
         <div
-          className="absolute right-0 mt-2 w-72 rounded-2xl bg-elev border border-border shadow-lg overflow-hidden z-30 animate-rise"
+          className="absolute right-0 z-50 mt-2 w-72 rounded-2xl bg-elev border border-border shadow-lg overflow-hidden animate-rise"
           onMouseLeave={() => setOpen(false)}
+          role="menu"
         >
           <div className="px-4 pt-3 pb-3 border-b border-border">
             <div className="flex items-center gap-3">

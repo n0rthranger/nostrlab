@@ -9,14 +9,16 @@ import { KIND_COMMUNITY } from "./kinds";
 import { ensureUser } from "./profile";
 import { evaluateEventRelevance, isNostrLabAuthoredEvent, type EventRelevance } from "./event-relevance";
 import { parseNostrCoordinate } from "./coordinates";
+import { eventDedupeKey, findDuplicateEvent, type DuplicateEventMatch } from "@/lib/events/dedupe";
 
-type EventIngestStatus = "stored" | "skipped" | "older";
+type EventIngestStatus = "stored" | "skipped" | "older" | "duplicate";
 
 export interface EventIngestResult {
   status: EventIngestStatus;
   id?: string;
   nostrId?: string;
   reason?: string;
+  duplicate?: DuplicateEventMatch;
   relevance?: EventRelevance;
   source: "nostrlab" | "external" | "unknown";
 }
@@ -104,6 +106,30 @@ export async function ingestEventListing(
     }
   }
 
+  const dedupeInput = {
+    title: parsed.title,
+    startsAt: parsed.startsAt,
+    mode: eventModeToDb(parsed.mode),
+    city: parsed.city,
+    venue: parsed.venue,
+    geohash: parsed.geohash,
+    organizerPubkey: parsed.organizerPubkey,
+    dTag: parsed.dTag,
+    excludeEventId: existing?.id,
+  };
+  const duplicate = await findDuplicateEvent(dedupeInput);
+  if (duplicate) {
+    return {
+      status: "duplicate",
+      id: duplicate.id,
+      nostrId: duplicate.nostrId,
+      reason: "duplicate event",
+      duplicate,
+      relevance,
+      source,
+    };
+  }
+
   await ensureUser(parsed.organizerPubkey);
   const ensuredCohosts: string[] = [];
   for (const co of cohostPubkeys) {
@@ -119,6 +145,7 @@ export async function ingestEventListing(
   const sanitizedDesc = sanitizeDescription(parsed.description);
   const bannerUrl = safeUrl(parsed.bannerUrl);
   const isPaid = !!(parsed.priceSats && parsed.priceSats > 0);
+  const dedupeKey = eventDedupeKey(dedupeInput);
   const recurrenceFrequency =
     parsed.recurrenceFrequency === "weekly" ? "WEEKLY"
     : parsed.recurrenceFrequency === "monthly" ? "MONTHLY"
@@ -149,72 +176,93 @@ export async function ingestEventListing(
     }
   }
 
-  const upserted = await prisma.event.upsert({
-    where: {
-      organizerPubkey_dTag: {
-        organizerPubkey: parsed.organizerPubkey,
+  let upserted;
+  try {
+    upserted = await prisma.event.upsert({
+      where: {
+        organizerPubkey_dTag: {
+          organizerPubkey: parsed.organizerPubkey,
+          dTag: parsed.dTag,
+        },
+      },
+      create: {
+        nostrId: parsed.nostrId,
         dTag: parsed.dTag,
+        organizerPubkey: parsed.organizerPubkey,
+        title: parsed.title,
+        summary: parsed.summary,
+        description: sanitizedDesc,
+        bannerUrl,
+        startsAt: parsed.startsAt,
+        endsAt: parsed.endsAt,
+        timezone: parsed.tzid,
+        city: parsed.city,
+        venue: parsed.venue,
+        geohash: parsed.geohash,
+        mode: eventModeToDb(parsed.mode),
+        capacity: parsed.capacity,
+        paymentMode: isPaid ? "PAID" : "FREE",
+        priceSats: isPaid ? parsed.priceSats : null,
+        recurrenceGroupId: parsed.recurrenceGroupId,
+        recurrenceIndex: parsed.recurrenceIndex,
+        recurrenceFrequency,
+        communityId,
+        clientTag: parsed.clientTag,
+        dedupeKey,
+        rawEvent: evt as unknown as Prisma.InputJsonValue,
+        tags: { create: hashtags.map((tag) => ({ tag })) },
+        cohosts: { create: ensuredCohosts.map((p) => ({ pubkey: p })) },
       },
-    },
-    create: {
-      nostrId: parsed.nostrId,
-      dTag: parsed.dTag,
-      organizerPubkey: parsed.organizerPubkey,
-      title: parsed.title,
-      summary: parsed.summary,
-      description: sanitizedDesc,
-      bannerUrl,
-      startsAt: parsed.startsAt,
-      endsAt: parsed.endsAt,
-      timezone: parsed.tzid,
-      city: parsed.city,
-      venue: parsed.venue,
-      geohash: parsed.geohash,
-      mode: eventModeToDb(parsed.mode),
-      capacity: parsed.capacity,
-      paymentMode: isPaid ? "PAID" : "FREE",
-      priceSats: isPaid ? parsed.priceSats : null,
-      recurrenceGroupId: parsed.recurrenceGroupId,
-      recurrenceIndex: parsed.recurrenceIndex,
-      recurrenceFrequency,
-      communityId,
-      clientTag: parsed.clientTag,
-      rawEvent: evt as unknown as Prisma.InputJsonValue,
-      tags: { create: hashtags.map((tag) => ({ tag })) },
-      cohosts: { create: ensuredCohosts.map((p) => ({ pubkey: p })) },
-    },
-    update: {
-      nostrId: parsed.nostrId,
-      title: parsed.title,
-      summary: parsed.summary,
-      description: sanitizedDesc,
-      bannerUrl,
-      startsAt: parsed.startsAt,
-      endsAt: parsed.endsAt,
-      timezone: parsed.tzid,
-      city: parsed.city,
-      venue: parsed.venue,
-      geohash: parsed.geohash,
-      mode: eventModeToDb(parsed.mode),
-      capacity: parsed.capacity,
-      paymentMode: isPaid ? "PAID" : "FREE",
-      priceSats: isPaid ? parsed.priceSats : null,
-      recurrenceGroupId: parsed.recurrenceGroupId,
-      recurrenceIndex: parsed.recurrenceIndex,
-      recurrenceFrequency,
-      communityId,
-      clientTag: parsed.clientTag,
-      rawEvent: evt as unknown as Prisma.InputJsonValue,
-      tags: {
-        deleteMany: {},
-        create: hashtags.map((tag) => ({ tag })),
+      update: {
+        nostrId: parsed.nostrId,
+        title: parsed.title,
+        summary: parsed.summary,
+        description: sanitizedDesc,
+        bannerUrl,
+        startsAt: parsed.startsAt,
+        endsAt: parsed.endsAt,
+        timezone: parsed.tzid,
+        city: parsed.city,
+        venue: parsed.venue,
+        geohash: parsed.geohash,
+        mode: eventModeToDb(parsed.mode),
+        capacity: parsed.capacity,
+        paymentMode: isPaid ? "PAID" : "FREE",
+        priceSats: isPaid ? parsed.priceSats : null,
+        recurrenceGroupId: parsed.recurrenceGroupId,
+        recurrenceIndex: parsed.recurrenceIndex,
+        recurrenceFrequency,
+        communityId,
+        clientTag: parsed.clientTag,
+        dedupeKey,
+        rawEvent: evt as unknown as Prisma.InputJsonValue,
+        tags: {
+          deleteMany: {},
+          create: hashtags.map((tag) => ({ tag })),
+        },
+        cohosts: {
+          deleteMany: {},
+          create: ensuredCohosts.map((p) => ({ pubkey: p })),
+        },
       },
-      cohosts: {
-        deleteMany: {},
-        create: ensuredCohosts.map((p) => ({ pubkey: p })),
-      },
-    },
-  });
+    });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      const duplicateAfterRace = await findDuplicateEvent(dedupeInput);
+      if (duplicateAfterRace) {
+        return {
+          status: "duplicate",
+          id: duplicateAfterRace.id,
+          nostrId: duplicateAfterRace.nostrId,
+          reason: "duplicate event",
+          duplicate: duplicateAfterRace,
+          relevance,
+          source,
+        };
+      }
+    }
+    throw e;
+  }
 
   return {
     status: "stored",

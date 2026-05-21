@@ -31,8 +31,8 @@ export async function GET(req: Request) {
     unreadNotifications,
   ] = await Promise.all([
     prisma.user.count(),
-    prisma.event.count({ where: { status: "ACTIVE" } }),
-    prisma.event.count({ where: { status: "ACTIVE", startsAt: { gte: now } } }),
+    prisma.event.count({ where: { status: "ACTIVE", duplicateOfId: null } }),
+    prisma.event.count({ where: { status: "ACTIVE", startsAt: { gte: now }, duplicateOfId: null } }),
     prisma.community.count(),
     prisma.payment.count({ where: { status: "PENDING", expiresAt: { gt: now } } }),
     prisma.payment.count({ where: { status: "PAID", paidAt: { gte: since24h } } }),

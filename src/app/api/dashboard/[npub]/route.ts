@@ -22,18 +22,18 @@ export async function GET(
 
   const [upcoming, past, rsvped, followed, notifications] = await Promise.all([
     prisma.event.findMany({
-      where: { organizerPubkey: pubkey, startsAt: { gte: new Date() } },
+      where: { organizerPubkey: pubkey, startsAt: { gte: new Date() }, duplicateOfId: null },
       orderBy: { startsAt: "asc" },
       include: { organizer: true, tags: true, _count: { select: { rsvps: true } } },
     }),
     prisma.event.findMany({
-      where: { organizerPubkey: pubkey, startsAt: { lt: new Date() } },
+      where: { organizerPubkey: pubkey, startsAt: { lt: new Date() }, duplicateOfId: null },
       orderBy: { startsAt: "desc" },
       take: 20,
       include: { organizer: true, tags: true, _count: { select: { rsvps: true } } },
     }),
     prisma.rsvp.findMany({
-      where: { pubkey, status: "GOING", event: { startsAt: { gte: new Date() } } },
+      where: { pubkey, status: "GOING", event: { startsAt: { gte: new Date() }, duplicateOfId: null } },
       include: {
         event: {
           include: { organizer: true, tags: true, _count: { select: { rsvps: true } } },
@@ -62,7 +62,7 @@ export async function GET(
   const followedCounts = followedIds.length > 0
     ? await prisma.event.groupBy({
         by: ["communityId"],
-        where: { communityId: { in: followedIds }, startsAt: { gte: new Date() }, status: "ACTIVE" },
+        where: { communityId: { in: followedIds }, startsAt: { gte: new Date() }, status: "ACTIVE", duplicateOfId: null },
         _count: { _all: true },
       })
     : [];

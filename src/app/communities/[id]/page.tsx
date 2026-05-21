@@ -24,6 +24,7 @@ export default async function CommunityPage({
       followers: true,
       _count: { select: { followers: true } },
       events: {
+        where: { duplicateOfId: null },
         include: { organizer: true, tags: true, _count: { select: { rsvps: true } } },
         orderBy: { startsAt: "asc" },
       },

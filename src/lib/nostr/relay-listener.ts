@@ -24,7 +24,7 @@ if (typeof globalThis.WebSocket === "undefined") {
 
 const STORE_KEY = "__nostrlab_relay_listener__" as const;
 type Closer = { close: () => void };
-type IngestStats = { stored: number; skipped: number; older: number; failed: number };
+type IngestStats = { stored: number; skipped: number; older: number; duplicate: number; failed: number };
 type ListenerState = {
   pool: SimplePool;
   eventSub: Closer | null;
@@ -54,7 +54,7 @@ type TaskLimiter = {
 };
 
 function emptyStats(): IngestStats {
-  return { stored: 0, skipped: 0, older: 0, failed: 0 };
+  return { stored: 0, skipped: 0, older: 0, duplicate: 0, failed: 0 };
 }
 
 function positiveIntEnv(name: string, fallback: number, min: number, max: number): number {
@@ -131,7 +131,7 @@ async function loadCoordinates(): Promise<{ coords: string[]; available: number 
 
   const upcoming = await prisma.event.findMany({
     select: { organizerPubkey: true, dTag: true },
-    where: { startsAt: { gte: now } },
+    where: { startsAt: { gte: now }, duplicateOfId: null },
     orderBy: { startsAt: "asc" },
     take: limit,
   });
@@ -139,13 +139,14 @@ async function loadCoordinates(): Promise<{ coords: string[]; available: number 
     select: { organizerPubkey: true, dTag: true },
     where: {
       startsAt: { gte: lowerBound, lt: now },
+      duplicateOfId: null,
     },
     orderBy: { startsAt: "desc" },
     take: limit - upcoming.length,
   });
 
   const available = await prisma.event.count({
-    where: { startsAt: { gte: lowerBound } },
+    where: { startsAt: { gte: lowerBound }, duplicateOfId: null },
   });
 
   const events = [...upcoming, ...recent];

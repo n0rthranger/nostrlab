@@ -8,7 +8,7 @@ import type { EventListItemDTO } from "@/types";
 export function EventCard({ event }: { event: EventListItemDTO }) {
   const grad = eventGradient(event.id);
   const start = new Date(event.startsAt);
-  const time = start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const time = start.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 
   return (
     <Link href={`/events/${event.id}`} className="group block">

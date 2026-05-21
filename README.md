@@ -214,14 +214,6 @@ If the worker runs as the Next.js worker role, set `ENABLE_PAYMENT_RECONCILER=tr
 - Write endpoints are rate-limited per pubkey/IP. Set `REDIS_URL` for multi-node production.
 - `/api/ready` fails release readiness when required production env, Postgres, or Redis is missing.
 
-## Roadmap (post-MVP)
-
-- Map clustering and saved location alerts.
-- Ticket resale.
-- Paid tickets: split organizer + co-host payouts via Lightning addresses.
-- Reputation: zap counts, follow-graph attendee preview ("3 people you follow are going").
-- Webhook from LN provider instead of polling.
-
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md). Security reports should follow [SECURITY.md](./SECURITY.md).

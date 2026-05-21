@@ -20,6 +20,7 @@ export function Footer() {
           <li><Link href="/events" className="hover:text-fg">Discover</Link></li>
           <li><Link href="/events/create" className="hover:text-fg">Host an event</Link></li>
           <li><Link href="/communities" className="hover:text-fg">Communities</Link></li>
+          <li><Link href="/faq" className="hover:text-fg">FAQ</Link></li>
           <li><Link href="/dashboard" className="hover:text-fg">Dashboard</Link></li>
         </Col>
         <Col title="Creator">
@@ -44,8 +45,7 @@ export function Footer() {
         </Col>
       </div>
       <div className="border-t border-border">
-        <div className="max-w-6xl mx-auto px-5 py-4 text-xs text-muted flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <span>© {new Date().getFullYear()} NostrLab · MIT</span>
+        <div className="max-w-6xl mx-auto px-5 py-4 text-xs text-muted flex justify-start">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <span>Open sourced under MIT</span>
             <a
