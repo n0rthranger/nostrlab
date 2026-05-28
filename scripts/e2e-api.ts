@@ -6,7 +6,20 @@ import {
   nip19,
 } from "nostr-tools";
 import { canonicalJson } from "../src/lib/stable-json";
-import { buildEventDeletion, buildEventListing, eventCoordinate } from "../src/lib/nostr/event-builder";
+import {
+  buildCalendarList,
+  buildCommunityDefinition,
+  buildCommunityList,
+  buildCommunityPost,
+  buildCommunityPostApproval,
+  buildEventAnnouncement,
+  buildEventComment,
+  buildEventDeletion,
+  buildEventListing,
+  communityCoordinate,
+  eventCoordinate,
+} from "../src/lib/nostr/event-builder";
+import { KIND_COMMUNITY } from "../src/lib/nostr/kinds";
 
 const base = process.env.NOSTRLAB_E2E_BASE_URL ?? "http://localhost:3001";
 const runId = Date.now().toString(36);
@@ -130,17 +143,33 @@ async function main() {
     tags: ["e2e", "nostrlab"],
     moderators: [cohost.pubkey],
   };
+  const signedCommunityEvent = finalizeEvent(buildCommunityDefinition({
+    pubkey: organizer.pubkey,
+    slug: communityPayload.slug,
+    name: communityPayload.name,
+    description: communityPayload.description,
+    tags: communityPayload.tags,
+    moderatorPubkeys: communityPayload.moderators,
+  }), organizer.sk);
+  const signedCalendarEvent = finalizeEvent(buildCalendarList({
+    pubkey: organizer.pubkey,
+    dTag: communityPayload.slug,
+    title: communityPayload.name,
+    description: communityPayload.description,
+  }), organizer.sk);
   let r = await json("/api/communities", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       ...communityPayload,
       signedAuthEvent: auth(organizer, "community.create", [["slug", communityPayload.slug]], communityPayload),
+      signedCommunityEvent,
+      signedCalendarEvent,
     }),
   });
   if (!r.res.ok) throw new Error(`community failed ${r.res.status}: ${JSON.stringify(r.body)}`);
   const community = r.body.community;
-  pass("community create", community.slug);
+  pass("community create", `${community.slug} with signed definition/calendar`);
 
   const communityUpdatePayload = {
     communityId: community.id,
@@ -223,18 +252,65 @@ async function main() {
   }
   pass("unapproved host official event blocked", "403");
 
-  const followPayload = { communityId: community.id };
   r = await json(`/api/communities/${community.id}/follow`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      signedAuthEvent: auth(attendee, "community.follow", [["community_id", community.id]], followPayload),
+      signedCommunityListEvent: finalizeEvent(buildCommunityList({
+        pubkey: attendee.pubkey,
+        communityCoordinates: [`${KIND_COMMUNITY}:${organizer.pubkey}:${community.slug}`],
+      }), attendee.sk),
     }),
   });
   if (!r.res.ok || !r.body.following) {
     throw new Error(`follow failed ${r.res.status}: ${JSON.stringify(r.body)}`);
   }
   pass("community follow", `${r.body.followerCount} follower(s)`);
+
+  const communityCoord = communityCoordinate(organizer.pubkey, community.slug);
+  const signedPostEvent = finalizeEvent(buildCommunityPost({
+    pubkey: attendee2.pubkey,
+    communityCoordinate: communityCoord,
+    communityOwnerPubkey: organizer.pubkey,
+    content: `E2E community post ${runId}`,
+  }), attendee2.sk);
+  r = await json(`/api/communities/${community.id}/posts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ signedPostEvent }),
+  });
+  if (!r.res.ok || !r.body.post?.id || r.body.post.approvedAt !== null) {
+    throw new Error(`community post failed ${r.res.status}: ${JSON.stringify(r.body)}`);
+  }
+  const communityPost = r.body.post as { id: string; nostrId: string; approvedAt: string | null };
+  pass("community post pending", communityPost.id);
+
+  r = await json(`/api/communities/${community.id}/posts`, { headers: { Cookie: organizerCookie } });
+  if (!r.res.ok || !r.body.canModerate || !r.body.posts?.some((p: any) => p.id === communityPost.id && p.rawEvent)) {
+    throw new Error(`moderator post queue missing pending post: ${r.res.status} ${JSON.stringify(r.body)}`);
+  }
+  pass("community moderator queue", "pending post visible to organizer");
+
+  const signedApprovalEvent = finalizeEvent(buildCommunityPostApproval({
+    pubkey: organizer.pubkey,
+    communityCoordinate: communityCoord,
+    postId: signedPostEvent.id,
+    postAuthorPubkey: attendee2.pubkey,
+    rawPostEvent: signedPostEvent,
+  }), organizer.sk);
+  r = await json(`/api/communities/${community.id}/posts/${communityPost.id}/approve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ signedApprovalEvent }),
+  });
+  if (!r.res.ok || !r.body.approvalId) {
+    throw new Error(`community post approval failed ${r.res.status}: ${JSON.stringify(r.body)}`);
+  }
+  r = await json(`/api/communities/${community.id}/posts`);
+  if (!r.res.ok || !r.body.posts?.some((p: any) => p.id === communityPost.id && p.approvedAt)) {
+    throw new Error(`approved community post not public: ${r.res.status} ${JSON.stringify(r.body)}`);
+  }
+  pass("community post approval", r.body.posts.find((p: any) => p.id === communityPost.id).approvalCount);
 
   const freeDTag = `e2e-free-${runId}`;
   const startsAt = new Date(Date.now() + 2 * 86_400_000);
@@ -325,10 +401,10 @@ async function main() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ signedEvent: rsvp(attendee2, organizer, freeDTag, "accepted", "a2") }),
   });
-  if (r.res.status !== 409 || !r.body.canWaitlist) {
+  if (r.res.status !== 409 || r.body.error !== "event is at capacity") {
     throw new Error(`capacity did not block accepted RSVP: ${r.res.status} ${JSON.stringify(r.body)}`);
   }
-  pass("capacity blocks extra RSVP", "409 with canWaitlist");
+  pass("capacity blocks extra RSVP", "409 event is at capacity");
 
   r = await json(`/api/events/${freeEvent.id}/rsvp`, {
     method: "POST",
@@ -382,7 +458,7 @@ async function main() {
     return { status: attempt.res.status, body: attempt.body };
   }));
   const freeRaceIssued = freeRaceResults.filter((result) => result.status === 200 && result.body.ticketId).length;
-  const freeRaceRejected = freeRaceResults.filter((result) => result.status === 409 && result.body.canWaitlist).length;
+  const freeRaceRejected = freeRaceResults.filter((result) => result.status === 409 && result.body.error === "event is at capacity").length;
   if (freeRaceIssued !== 1 || freeRaceRejected !== freeRaceUsers.length - 1) {
     throw new Error(`free capacity race failed: ${JSON.stringify(freeRaceResults)}`);
   }
@@ -468,25 +544,34 @@ async function main() {
   pass("duplicate check-in protection", "alreadyCheckedIn");
 
   const commentPayload = { eventId: freeEvent.id, body: "E2E discussion comment" };
+  const signedCommentEvent = finalizeEvent(buildEventComment({
+    pubkey: attendee.pubkey,
+    eventCoordinate: eventCoordinate(organizer.pubkey, freeDTag),
+    organizerPubkey: organizer.pubkey,
+    eventNostrId: freeEvent.nostrId,
+    content: commentPayload.body,
+  }), attendee.sk);
   r = await json(`/api/events/${freeEvent.id}/comments`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      ...commentPayload,
-      signedAuthEvent: auth(attendee, "event.comment", [["e", freeEvent.id]], commentPayload),
-    }),
+    body: JSON.stringify({ signedCommentEvent }),
   });
   if (!r.res.ok || !r.body.comment) throw new Error(`comment failed ${r.res.status}: ${JSON.stringify(r.body)}`);
   pass("event discussion comment", r.body.comment.id);
 
   const announcementPayload = { eventId: freeEvent.id, title: "E2E Update", body: "Automated announcement." };
+  const signedAnnouncementEvent = finalizeEvent(buildEventAnnouncement({
+    pubkey: organizer.pubkey,
+    eventCoordinate: eventCoordinate(organizer.pubkey, freeDTag),
+    organizerPubkey: organizer.pubkey,
+    eventNostrId: freeEvent.nostrId,
+    title: announcementPayload.title,
+    content: announcementPayload.body,
+  }), organizer.sk);
   r = await json(`/api/events/${freeEvent.id}/announcements`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      ...announcementPayload,
-      signedAuthEvent: auth(organizer, "event.announcement", [["e", freeEvent.id]], announcementPayload),
-    }),
+    body: JSON.stringify({ signedAnnouncementEvent }),
   });
   if (!r.res.ok || !r.body.announcement) {
     throw new Error(`announcement failed ${r.res.status}: ${JSON.stringify(r.body)}`);
@@ -530,13 +615,17 @@ async function main() {
   pass("calendar export", "ICS includes cancelled status");
 
   const blockedPayload = { eventId: freeEvent.id, body: "blocked after cancel" };
+  const blockedSignedCommentEvent = finalizeEvent(buildEventComment({
+    pubkey: attendee.pubkey,
+    eventCoordinate: eventCoordinate(organizer.pubkey, freeDTag),
+    organizerPubkey: organizer.pubkey,
+    eventNostrId: freeEvent.nostrId,
+    content: blockedPayload.body,
+  }), attendee.sk);
   r = await json(`/api/events/${freeEvent.id}/comments`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      ...blockedPayload,
-      signedAuthEvent: auth(attendee, "event.comment", [["e", freeEvent.id]], blockedPayload),
-    }),
+    body: JSON.stringify({ signedCommentEvent: blockedSignedCommentEvent }),
   });
   if (r.res.status !== 409) throw new Error(`cancelled comment should fail: ${r.res.status} ${JSON.stringify(r.body)}`);
   pass("cancelled event blocks comments", "409");

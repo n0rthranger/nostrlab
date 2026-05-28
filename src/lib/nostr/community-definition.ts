@@ -1,4 +1,4 @@
-import { KIND_COMMUNITY } from "./kinds";
+import { APP_NAME, KIND_COMMUNITY } from "./kinds";
 import type { NostrEvent } from "./types";
 import { getMultiTag, getTagValue, verifyNostrEvent } from "./verify";
 
@@ -56,7 +56,9 @@ export function validateCommunityDefinition(
   }
 
   const expectedTags = (expected.tags ?? []).map((t) => t.toLowerCase());
-  const actualTags = getMultiTag(evt, "t").filter((t) => t !== "nostrlab").map((t) => t.toLowerCase());
+  const actualTags = getMultiTag(evt, "t").map((t) => t.toLowerCase());
+  const appTagIndex = actualTags.indexOf(APP_NAME);
+  if (appTagIndex >= 0) actualTags.splice(appTagIndex, 1);
   if (!sameSet(actualTags, expectedTags)) return "community definition tags mismatch";
 
   const expectedModerators = [

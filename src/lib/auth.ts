@@ -71,7 +71,7 @@ function verifyNip98IfPresent(evt: NostrEvent, opts: AuthCheckOptions): AuthChec
   if (ageSec > (opts.maxAgeSec ?? NIP98_MAX_AUTH_AGE_SEC) || ageSec < -60) {
     return { ok: false, reason: "stale NIP-98 auth event" };
   }
-  if (url !== opts.request.url) return { ok: false, reason: "wrong request URL" };
+  if (!requestUrlCandidates(opts.request).has(url)) return { ok: false, reason: "wrong request URL" };
   if (method.toUpperCase() !== opts.request.method.toUpperCase()) return { ok: false, reason: "wrong request method" };
   if (opts.expectedPayload !== undefined) {
     const expected = hashAuthPayloadSync(opts.expectedPayload);
@@ -95,6 +95,17 @@ export function authEventFromHeader(req: Request): NostrEvent | null {
 
 export function authEventForRequest(req: Request, fallback?: NostrEvent): NostrEvent | undefined {
   return authEventFromHeader(req) ?? fallback;
+}
+
+function requestUrlCandidates(req: Request): Set<string> {
+  const actual = new URL(req.url);
+  const candidates = new Set<string>([actual.toString()]);
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+  if (host) {
+    const proto = req.headers.get("x-forwarded-proto") ?? actual.protocol.replace(/:$/, "");
+    candidates.add(`${proto}://${host}${actual.pathname}${actual.search}`);
+  }
+  return candidates;
 }
 
 function hashAuthPayloadSync(value: Parameters<typeof canonicalJson>[0]): string {
