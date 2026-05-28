@@ -123,7 +123,7 @@ export function BuyTicketButton({ eventId, priceSats, ticketTiers = [], alreadyO
       </button>
       {!hasSigner && !identity && (
         <div className="text-[11px] text-muted text-center">
-          Install Alby or nos2x to buy with Nostr.
+          Sign in from the header with Nostr Connect, or install Alby/nos2x to buy.
         </div>
       )}
       {err && (

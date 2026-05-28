@@ -12,7 +12,7 @@ import { eventCoordinate } from "@/lib/nostr/event-builder";
 import { isBanned } from "@/lib/moderation";
 import { clientIp } from "@/lib/request-ip";
 import { notifyPubkey } from "@/lib/notifications";
-import { verifyAuthEnvelope } from "@/lib/auth";
+import { authEventForRequest, verifyAuthEnvelope } from "@/lib/auth";
 import type { NostrEvent } from "@/lib/nostr/types";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -40,19 +40,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       status: privateParsed.data.status,
       private: true,
     };
-    const auth = verifyAuthEnvelope(privateParsed.data.signedAuthEvent, {
+    const authEvent = authEventForRequest(req, privateParsed.data.signedAuthEvent);
+    if (!authEvent) return NextResponse.json({ error: "missing auth event" }, { status: 401 });
+    const auth = verifyAuthEnvelope(authEvent, {
       expectedAction: "rsvp.private",
       expectedTags: { event_id: id, status: privateParsed.data.status },
       expectedPayload: payload,
+      request: req,
     });
     if (!auth.ok || !auth.pubkey) {
       return NextResponse.json({ error: auth.reason ?? "unauthorized" }, { status: 401 });
     }
     rsvpPubkey = auth.pubkey;
     nextStatus = rsvpStatusToDb(privateParsed.data.status);
-    nostrId = privateParsed.data.signedAuthEvent.id;
-    rawEvent = privateParsed.data.signedAuthEvent as unknown as Prisma.InputJsonValue;
-    createdAt = privateParsed.data.signedAuthEvent.created_at;
+    nostrId = authEvent.id;
+    rawEvent = authEvent as unknown as Prisma.InputJsonValue;
+    createdAt = authEvent.created_at;
     privatePayload = JSON.stringify({ private: true, status: privateParsed.data.status });
   } else {
     const parsed = rsvpCreateSchema.safeParse(body);

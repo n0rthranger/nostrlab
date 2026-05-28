@@ -8,6 +8,9 @@ import { Button } from "@/components/ui/Button";
 import { BannerUploader } from "@/components/events/BannerUploader";
 import { hashAuthPayload } from "@/lib/auth-client";
 import { normalizePubkey } from "@/lib/nostr/encode";
+import { buildCalendarList, buildCommunityDefinition } from "@/lib/nostr/event-builder";
+import { clientPublish } from "@/lib/nostr/client-pool";
+import { getClientRelays } from "@/lib/nostr/relays";
 
 function slugify(s: string) {
   return s
@@ -18,6 +21,12 @@ function slugify(s: string) {
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 60);
+}
+
+function publicUrl(value: string | null): string | null {
+  if (!value) return null;
+  if (!value.startsWith("/")) return value;
+  return `${window.location.origin}${value}`;
 }
 
 export function CommunityCreateForm() {
@@ -42,11 +51,11 @@ export function CommunityCreateForm() {
       <div className="rounded-2xl border border-border bg-surface p-8 text-center">
         <h2 className="text-xl font-semibold tracking-tight">Sign in to host a community</h2>
         <p className="text-muted mt-2 max-w-md mx-auto">
-          Communities are tied to your Nostr key. No email, no password — just sign in with a NIP-07 signer.
+          Communities are tied to your Nostr key. No email, no password.
         </p>
         <div className="mt-6">
           <Button size="lg" onClick={() => login().catch(() => {})} disabled={!hasSigner}>
-            {hasSigner ? "Sign in with Nostr" : "Install a NIP-07 signer first"}
+            {hasSigner ? "Sign in with Nostr" : "Use header Sign in for Nostr Connect"}
           </Button>
         </div>
       </div>
@@ -107,12 +116,31 @@ export function CommunityCreateForm() {
           ["payload_hash", payloadHash],
         ],
       });
+      const signedCommunityEvent = await signEvent(buildCommunityDefinition({
+        pubkey: identity.pubkey,
+        slug: effectiveSlug,
+        name: payload.name,
+        description: payload.description,
+        imageUrl: publicUrl(payload.imageUrl),
+        website: payload.website,
+        tags,
+        moderatorPubkeys: uniqueModerators,
+        relays: getClientRelays(),
+      }));
+      const signedCalendarEvent = await signEvent(buildCalendarList({
+        pubkey: identity.pubkey,
+        dTag: effectiveSlug,
+        title: payload.name,
+        description: payload.description,
+      }));
 
       const res = await fetch("/api/communities", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           signedAuthEvent: signed,
+          signedCommunityEvent,
+          signedCalendarEvent,
           ...payload,
         }),
       });
@@ -125,6 +153,8 @@ export function CommunityCreateForm() {
           : "Failed to create community.";
         throw new Error(errMsg);
       }
+      clientPublish(signedCommunityEvent).catch(() => {});
+      clientPublish(signedCalendarEvent).catch(() => {});
       router.push(`/communities/${json.community.slug}`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));

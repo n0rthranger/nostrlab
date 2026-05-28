@@ -80,6 +80,7 @@ export function EventFilters() {
   }, [q, city]);
 
   const hasFilters = !!(sp.get("q") || sp.get("city") || sp.get("tag") || sp.get("category") || sp.get("mode") || sp.get("paid") || sp.get("status") || sp.get("view") || sp.get("lat") || sp.get("lng"));
+  const subscribeHref = `/api/calendar/events.ics${sp.toString() ? `?${sp.toString()}` : ""}`;
 
   return (
     <div className="space-y-3">
@@ -117,6 +118,12 @@ export function EventFilters() {
               Clear
             </button>
           )}
+          <a
+            href={subscribeHref}
+            className="h-10 px-3 text-sm font-medium rounded-full border border-border hover:bg-surface2 transition-colors text-center leading-[38px]"
+          >
+            Subscribe
+          </a>
         </div>
       </div>
       {geoErr && <div className="text-xs text-danger">{geoErr}</div>}

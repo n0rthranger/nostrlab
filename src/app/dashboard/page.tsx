@@ -61,7 +61,7 @@ export default function DashboardPage() {
         </p>
         <div className="mt-6">
           <Button size="lg" onClick={() => login().catch(() => {})} disabled={!hasSigner}>
-            {hasSigner ? "Sign in with Nostr" : "Install a NIP-07 signer first"}
+            {hasSigner ? "Sign in with Nostr" : "Use header Sign in for Nostr Connect"}
           </Button>
         </div>
       </div>
@@ -75,7 +75,7 @@ export default function DashboardPage() {
         <p className="text-muted mt-2">{err}</p>
         <div className="mt-6">
           <Button size="lg" onClick={() => login().catch(() => {})} disabled={!hasSigner}>
-            Sign in with Nostr
+            {hasSigner ? "Sign in with Nostr" : "Use header Sign in for Nostr Connect"}
           </Button>
         </div>
       </div>

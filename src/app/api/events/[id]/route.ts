@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { eventToDetailDTO } from "@/lib/dto";
 import { nostrEventSchema } from "@/lib/validation";
 import { isBanned } from "@/lib/moderation";
-import { verifyAuthEnvelope } from "@/lib/auth";
+import { authEventForRequest, verifyAuthEnvelope } from "@/lib/auth";
 import { notifyEventRecipients } from "@/lib/notifications";
 import { verifyNostrEvent } from "@/lib/nostr/verify";
 import { KIND_EVENT_DELETION, KIND_EVENT_LISTING } from "@/lib/nostr/kinds";
@@ -63,7 +63,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 const statusSchema = z.object({
   action: z.enum(["cancel", "restore"]),
   reason: z.string().max(2000).nullable().optional(),
-  signedAuthEvent: z.object({
+    signedAuthEvent: z.object({
     id: z.string(),
     pubkey: z.string(),
     kind: z.number(),
@@ -71,7 +71,7 @@ const statusSchema = z.object({
     tags: z.array(z.array(z.string())),
     content: z.string(),
     sig: z.string(),
-  }),
+    }).optional(),
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -91,10 +91,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     eventId: id,
     reason: parsed.data.reason?.trim() || null,
   };
-  const auth = verifyAuthEnvelope(parsed.data.signedAuthEvent, {
+  const authEvent = authEventForRequest(req, parsed.data.signedAuthEvent);
+  if (!authEvent) return NextResponse.json({ error: "missing auth event" }, { status: 401 });
+  const auth = verifyAuthEnvelope(authEvent, {
     expectedAction: parsed.data.action === "cancel" ? "event.cancel" : "event.restore",
     expectedTags: { e: id },
     expectedPayload: payload,
+    request: req,
   });
   if (!auth.ok || !auth.pubkey) return NextResponse.json({ error: auth.reason ?? "unauthorized" }, { status: 401 });
   const allowed = event.organizerPubkey === auth.pubkey || event.cohosts.some((c) => c.pubkey === auth.pubkey);

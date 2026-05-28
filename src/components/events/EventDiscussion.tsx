@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { useNostr } from "@/hooks/useNostr";
-import { hashAuthPayload } from "@/lib/auth-client";
+import { clientPublish } from "@/lib/nostr/client-pool";
+import { buildEventComment, eventCoordinate } from "@/lib/nostr/event-builder";
 import { shortNpub } from "@/lib/utils";
 import type { UserDTO } from "@/types";
 
@@ -23,7 +24,15 @@ interface AnnouncementDTO {
   author: UserDTO;
 }
 
-export function EventDiscussion({ eventId, disabled }: { eventId: string; disabled?: boolean }) {
+interface EventDiscussionProps {
+  eventId: string;
+  organizerPubkey: string;
+  dTag: string;
+  nostrId: string;
+  disabled?: boolean;
+}
+
+export function EventDiscussion({ eventId, organizerPubkey, dTag, nostrId, disabled }: EventDiscussionProps) {
   const { identity, login, signEvent } = useNostr();
   const [comments, setComments] = useState<CommentDTO[]>([]);
   const [announcements, setAnnouncements] = useState<AnnouncementDTO[]>([]);
@@ -50,27 +59,26 @@ export function EventDiscussion({ eventId, disabled }: { eventId: string; disabl
     if (!currentIdentity) {
       try { currentIdentity = await login(); } catch (er) { setErr((er as Error).message); return; }
     }
-    const payload = { eventId, body: body.trim() };
-    if (!payload.body) return;
+    const commentBody = body.trim();
+    if (!commentBody) return;
     setBusy(true);
     try {
-      const payloadHash = await hashAuthPayload(payload);
       const signed = await signEvent({
-        pubkey: currentIdentity.pubkey,
-        kind: 27235,
-        created_at: Math.floor(Date.now() / 1000),
-        content: "",
-        tags: [
-          ["action", "event.comment"],
-          ["e", eventId],
-          ["payload_hash", payloadHash],
-        ],
+        ...buildEventComment({
+          pubkey: currentIdentity.pubkey,
+          eventCoordinate: eventCoordinate(organizerPubkey, dTag),
+          organizerPubkey,
+          eventNostrId: nostrId,
+          content: commentBody,
+        }),
       });
+      const publishP = clientPublish(signed);
       const res = await fetch(`/api/events/${eventId}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: payload.body, signedAuthEvent: signed }),
+        body: JSON.stringify({ signedCommentEvent: signed }),
       });
+      await publishP.catch(() => ({ ok: 0, failed: 0 }));
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Could not post comment.");
       setComments((current) => [...current, json.comment]);

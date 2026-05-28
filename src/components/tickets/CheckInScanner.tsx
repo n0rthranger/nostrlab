@@ -161,7 +161,7 @@ export function CheckInScanner({ eventId, organizerPubkey, cohostPubkeys }: Prop
   useEffect(() => () => stopCamera(), []);
 
   if (!hasSigner && !identity) {
-    return <Card><CardBody className="text-sm text-muted">Install Alby or nos2x to authenticate as organizer.</CardBody></Card>;
+    return <Card><CardBody className="text-sm text-muted">Sign in from the header with Nostr Connect, or install Alby/nos2x to authenticate as organizer.</CardBody></Card>;
   }
   if (!identity) return <Button onClick={() => login().catch(() => {})}>Sign in to scan</Button>;
   if (!isAuthorized) return <Card><CardBody className="text-sm text-danger">Signed-in npub isn't an organizer or co-host of this event.</CardBody></Card>;

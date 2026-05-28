@@ -9,7 +9,7 @@ NostrLab is an open-source event platform for communities that want portable ide
 | Layer | Tech |
 | --- | --- |
 | App | Next.js 15 (App Router), React 19, TypeScript, Tailwind |
-| Identity | NIP-07 browser signers (Alby, nos2x, …) — no nsec import |
+| Identity | NIP-07 browser signers and NIP-46 Nostr Connect / bunker signers — no nsec import |
 | Storage | PostgreSQL via Prisma — used as a search index, **not** an identity store |
 | Nostr | `nostr-tools` (server + client `SimplePool`) |
 | Lightning | LNURL-pay through organizer Lightning Addresses; `mock` and `none` modes for local/dev |
@@ -22,7 +22,7 @@ NostrLab is an open-source event platform for communities that want portable ide
 | `31923` | NIP-52 time-based event listing (parameterized replaceable; `d` tag = stable slug) |
 | `31925` | RSVP (`status` tag: `accepted` / `tentative` / `declined` / `waitlist`) |
 | `31926` | Ticket proof with hashed ticket secret and paid-ticket settlement evidence |
-| `34550` | NIP-72 community reference used for community calendars and host access |
+| `34550` | NIP-72 community definition used for interoperable community calendars and host access |
 
 We deliberately do **not** publish invoices, ticket secrets, Lightning preimages, or buyer PII to relays.
 
@@ -45,7 +45,7 @@ pnpm dev
 # http://localhost:3000
 ```
 
-You'll need a NIP-07 signer browser extension to sign in:
+You'll need a NIP-07 signer browser extension or a NIP-46 remote signer to sign in:
 
 - [Alby](https://getalby.com)
 - [nos2x](https://github.com/fiatjaf/nos2x)
@@ -103,7 +103,7 @@ See [docs/production-release.md](./docs/production-release.md) for the full publ
 ## Architecture
 
 ```
-              browser (NIP-07 signer)
+              browser (Nostr signer)
                   │
                   │ sign event
                   ▼
@@ -136,7 +136,7 @@ src/
     tickets/[id]/           ticket page; secret arrives via URL fragment
     api/                    server routes
   components/               UI primitives + feature components
-  hooks/useNostr.tsx        NIP-07 React context
+  hooks/useNostr.tsx        Nostr signer React context
   lib/
     nostr/                  kinds, verify, parse, build, pools
     lightning/              LNURL, mock, and disabled payment modes
@@ -155,6 +155,8 @@ prisma/
 | `GET /api/events/[id]` | Detail + organizer stats |
 | `POST /api/events/[id]/rsvp` | Body: `{ signedEvent }` (kind 31925); replaceable per (event, pubkey) |
 | `GET /api/events/[id]/me?pubkey=` | Caller's RSVP + ticket existence |
+| `GET /api/events/[id]/ics` | Single-event calendar file |
+| `GET /api/calendar/events.ics` | Subscribable public event feed; accepts the event filters as query params |
 | `GET /api/users/[npub-or-hex]` | Cached profile metadata |
 | `POST /api/users/[pubkey]/refresh` | Force kind:0 re-fetch (rate-limited) |
 | `POST /api/invoices` | Body: `{ eventId, buyerPubkey }` → bolt11 |
@@ -165,6 +167,7 @@ prisma/
 | `GET /api/communities` | List communities |
 | `POST /api/communities` | Create community (organizer-signed auth event) |
 | `PATCH /api/communities/[id]` | Owner-only community settings, approved hosts, verification website, and ownership transfer |
+| `GET /api/communities/[slug]/ics` | Subscribable community calendar feed |
 | `GET /api/dashboard/[npub]` | Organizer + attendee dashboard |
 | `GET /api/health` | Liveness probe |
 | `GET /api/ready` | Readiness probe for DB, Redis, and production env |

@@ -165,7 +165,12 @@ export default async function ManageEventPage({
         />
       )}
 
-      <AnnouncementComposer eventId={event.id} />
+      <AnnouncementComposer
+        eventId={event.id}
+        organizerPubkey={event.organizerPubkey}
+        dTag={event.dTag}
+        nostrId={event.nostrId}
+      />
 
       <section>
         <h2 className="text-xl font-semibold tracking-tight mb-3">RSVPs</h2>

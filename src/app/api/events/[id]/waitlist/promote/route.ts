@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { waitlistPromoteSchema } from "@/lib/validation";
-import { verifyAuthEnvelope } from "@/lib/auth";
+import { authEventForRequest, verifyAuthEnvelope } from "@/lib/auth";
 import { canManageEvent } from "@/lib/event-access";
 import { notifyPubkey } from "@/lib/notifications";
 
@@ -20,10 +20,13 @@ export async function POST(
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   const payload = { eventId: id, pubkey: parsed.data.pubkey ?? null };
-  const auth = verifyAuthEnvelope(parsed.data.signedAuthEvent, {
+  const authEvent = authEventForRequest(req, parsed.data.signedAuthEvent);
+  if (!authEvent) return NextResponse.json({ error: "missing auth event" }, { status: 401 });
+  const auth = verifyAuthEnvelope(authEvent, {
     expectedAction: "waitlist.promote",
     expectedTags: { e: id },
     expectedPayload: payload,
+    request: req,
   });
   if (!auth.ok || !auth.pubkey) return NextResponse.json({ error: auth.reason ?? "unauthorized" }, { status: 401 });
   if (!(await canManageEvent(id, auth.pubkey))) {

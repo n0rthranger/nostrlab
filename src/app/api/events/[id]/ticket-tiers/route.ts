@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { verifyAuthEnvelope } from "@/lib/auth";
+import { authEventForRequest, verifyAuthEnvelope } from "@/lib/auth";
 import { nostrEventSchema } from "@/lib/validation";
 import { ticketTierToDTO } from "@/lib/dto";
 
@@ -17,7 +17,7 @@ const tierInput = z.object({
 
 const updateSchema = z.object({
   tiers: z.array(tierInput).max(12),
-  signedAuthEvent: nostrEventSchema,
+  signedAuthEvent: nostrEventSchema.optional(),
 });
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -49,10 +49,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     salesStartAt: t.salesStartAt ?? null,
     salesEndAt: t.salesEndAt ?? null,
   }));
-  const auth = verifyAuthEnvelope(parsed.data.signedAuthEvent, {
+  const authEvent = authEventForRequest(req, parsed.data.signedAuthEvent);
+  if (!authEvent) return NextResponse.json({ error: "missing auth event" }, { status: 401 });
+  const auth = verifyAuthEnvelope(authEvent, {
     expectedAction: "ticket-tiers.update",
     expectedTags: { e: id },
     expectedPayload: { eventId: id, tiers: normalized },
+    request: req,
   });
   if (!auth.ok || !auth.pubkey) return NextResponse.json({ error: auth.reason ?? "unauthorized" }, { status: 401 });
   const allowed = event.organizerPubkey === auth.pubkey || event.cohosts.some((c) => c.pubkey === auth.pubkey);

@@ -158,7 +158,7 @@ export function RsvpButtons({
 
       {!hasSigner && !identity && (
         <div className="text-[11px] text-muted text-center pt-1">
-          Install Alby or nos2x to RSVP with your Nostr key.
+          Sign in from the header with Nostr Connect, or install Alby/nos2x to RSVP.
         </div>
       )}
       {err && <div className="text-[11px] text-danger pt-1">{err}</div>}

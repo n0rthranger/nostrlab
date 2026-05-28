@@ -1,17 +1,11 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { verifyAuthEnvelope } from "@/lib/auth";
-import { nostrEventSchema } from "@/lib/validation";
-import { ensureUser } from "@/lib/nostr/profile";
+import { commentCreateSchema } from "@/lib/validation";
 import { userToDTO } from "@/lib/dto";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/request-ip";
-
-const commentSchema = z.object({
-  body: z.string().min(1).max(2000),
-  signedAuthEvent: nostrEventSchema,
-});
+import { ingestEventComment } from "@/lib/nostr/ingest-social";
+import { publishToRelays } from "@/lib/nostr/relay-pool";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -38,31 +32,28 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   let body: unknown;
   try { body = await req.json(); } catch { return NextResponse.json({ error: "invalid json" }, { status: 400 }); }
-  const parsed = commentSchema.safeParse(body);
+  const parsed = commentCreateSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   const event = await prisma.event.findUnique({ where: { id }, select: { id: true, status: true } });
   if (!event) return NextResponse.json({ error: "event not found" }, { status: 404 });
   if (event.status === "CANCELLED") return NextResponse.json({ error: "event is cancelled" }, { status: 409 });
 
-  const payload = { eventId: id, body: parsed.data.body.trim() };
-  const auth = verifyAuthEnvelope(parsed.data.signedAuthEvent, {
-    expectedAction: "event.comment",
-    expectedTags: { e: id },
-    expectedPayload: payload,
+  const result = await ingestEventComment(parsed.data.signedCommentEvent, {
+    expectedEventId: id,
+    expectedAnnouncement: false,
   });
-  if (!auth.ok || !auth.pubkey) return NextResponse.json({ error: auth.reason ?? "unauthorized" }, { status: 401 });
+  if (result.status === "skipped" || result.type !== "comment" || !result.id) {
+    return NextResponse.json({ error: result.reason ?? "invalid comment" }, { status: 400 });
+  }
 
-  await ensureUser(auth.pubkey);
-  const comment = await prisma.eventComment.create({
-    data: {
-      eventId: id,
-      pubkey: auth.pubkey,
-      body: payload.body,
-      nostrId: parsed.data.signedAuthEvent.id,
-    },
+  const comment = await prisma.eventComment.findUnique({
+    where: { id: result.id },
     include: { user: true },
   });
+  if (!comment) return NextResponse.json({ error: "comment not found" }, { status: 500 });
+
+  if (result.status === "stored") publishToRelays(parsed.data.signedCommentEvent).catch(() => {});
 
   return NextResponse.json({
     comment: {

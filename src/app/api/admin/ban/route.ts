@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { banPubkeySchema } from "@/lib/validation";
-import { verifyAuthEnvelope } from "@/lib/auth";
+import { authEventForRequest, verifyAuthEnvelope } from "@/lib/auth";
 import { isAdmin, isAdminConfigured } from "@/lib/moderation";
 
 export const dynamic = "force-dynamic";
@@ -17,13 +17,16 @@ async function authorize(req: Request, expectedAction: string) {
   if (!parsed.success) {
     return { ok: false as const, status: 400, error: parsed.error.flatten() };
   }
-  const auth = verifyAuthEnvelope(parsed.data.signedAuthEvent, {
+  const authEvent = authEventForRequest(req, parsed.data.signedAuthEvent);
+  if (!authEvent) return { ok: false as const, status: 401, error: "missing auth event" };
+  const auth = verifyAuthEnvelope(authEvent, {
     expectedAction,
     expectedTags: { p: parsed.data.pubkey },
     expectedPayload: {
       pubkey: parsed.data.pubkey,
       reason: parsed.data.reason ?? null,
     },
+    request: req,
   });
   if (!auth.ok || !auth.pubkey) {
     return { ok: false as const, status: 401, error: auth.reason ?? "unauthorized" };

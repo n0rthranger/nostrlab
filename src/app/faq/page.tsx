@@ -37,7 +37,7 @@ const FAQ_GROUPS: FaqGroup[] = [
       {
         question: "How do I sign in?",
         answer:
-          "NostrLab uses a NIP-07 browser signer such as Alby or nos2x. The app asks the signer to approve events, and it does not ask you to paste an nsec into the site.",
+          "NostrLab uses a NIP-07 browser signer such as Alby or nos2x, or a NIP-46 remote signer through Nostr Connect. The app asks the signer to approve events, and it does not ask you to paste an nsec into the site.",
       },
       {
         question: "Can NostrLab handle online and in-person events?",

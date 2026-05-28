@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { checkInSchema } from "@/lib/validation";
-import { verifyAuthEnvelope } from "@/lib/auth";
+import { authEventForRequest, verifyAuthEnvelope } from "@/lib/auth";
 import { verifyTicketCredential } from "@/lib/tickets/proof";
 import type { NostrEvent } from "@/lib/nostr/types";
 
@@ -50,7 +50,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (!proof.ok) return NextResponse.json({ error: proof.reason }, { status: 400 });
   }
 
-  const auth = verifyAuthEnvelope(parsed.data.signedAuthEvent, {
+  const authEvent = authEventForRequest(req, parsed.data.signedAuthEvent);
+  if (!authEvent) return NextResponse.json({ error: "missing auth event" }, { status: 401 });
+  const auth = verifyAuthEnvelope(authEvent, {
     expectedAction: "checkin",
     expectedTags: {
       event_id: ticket.eventId,
@@ -61,6 +63,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       ticketId: ticket.id,
       ticketSecret: parsed.data.ticketSecret,
     },
+    request: req,
   });
   if (!auth.ok) return NextResponse.json({ error: auth.reason ?? "unauthorized" }, { status: 401 });
 

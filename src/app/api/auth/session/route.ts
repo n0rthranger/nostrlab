@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { verifyAuthEnvelope } from "@/lib/auth";
+import { authEventForRequest, verifyAuthEnvelope } from "@/lib/auth";
 import { createSessionCookie, sessionCookieOptions, clearSessionCookieOptions, SESSION_COOKIE, getSessionPubkey } from "@/lib/session";
 import { nostrEventSchema } from "@/lib/validation";
 
@@ -21,16 +21,18 @@ export async function GET() {
 export async function POST(req: Request) {
   let body: unknown;
   try { body = await req.json(); }
-  catch { return NextResponse.json({ error: "invalid json" }, { status: 400 }); }
+  catch { body = {}; }
 
   const parsed = sessionSchema.safeParse((body as { signedAuthEvent?: unknown })?.signedAuthEvent);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  const authEvent = authEventForRequest(req, parsed.success ? parsed.data : undefined);
+  if (!authEvent) {
+    return NextResponse.json({ error: parsed.success ? "missing auth event" : parsed.error.flatten() }, { status: 400 });
   }
 
-  const auth = verifyAuthEnvelope(parsed.data, {
+  const auth = verifyAuthEnvelope(authEvent, {
     expectedAction: "session.login",
     expectedTags: { app: "nostrlab" },
+    request: req,
   });
   if (!auth.ok || !auth.pubkey) {
     return NextResponse.json({ error: auth.reason ?? "unauthorized" }, { status: 401 });

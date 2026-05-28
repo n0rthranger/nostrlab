@@ -1,6 +1,9 @@
 // Long-lived relay subscriptions:
 // - kind:31923 NIP-52 event listings from the wider Nostr network
 // - kind:31925 RSVPs referencing any event we have indexed
+// - kind:1111 NIP-22 comments/announcements referencing indexed events
+// - kind:10004 NIP-51 community membership lists
+// - kind:1111/4550 NIP-72 community posts and moderator approvals
 //
 // Both feed through ingest policy gates before they touch the database.
 //
@@ -12,11 +15,13 @@ import WebSocketImpl from "ws";
 import { useWebSocketImplementation as setWebSocketImplementation } from "nostr-tools/relay";
 import { prisma } from "@/lib/prisma";
 import { getServerRelays } from "./relays";
-import { KIND_RSVP, KIND_EVENT_LISTING, KIND_EVENT_DELETION } from "./kinds";
+import { KIND_COMMENT, KIND_COMMUNITY, KIND_COMMUNITY_APPROVAL, KIND_COMMUNITY_LIST, KIND_RSVP, KIND_EVENT_LISTING, KIND_EVENT_DELETION } from "./kinds";
 import type { NostrEvent } from "./types";
 import { ingestRsvp } from "./ingest-rsvp";
 import { ingestEventListing } from "./ingest-event";
 import { ingestEventDeletion } from "./ingest-deletion";
+import { ingestCommunityList, ingestEventComment } from "./ingest-social";
+import { ingestCommunityApproval, ingestCommunityPost } from "./community-moderation";
 
 if (typeof globalThis.WebSocket === "undefined") {
   setWebSocketImplementation(WebSocketImpl);
@@ -30,17 +35,39 @@ type ListenerState = {
   eventSub: Closer | null;
   deletionSub: Closer | null;
   rsvpSub: Closer | null;
+  commentSub: Closer | null;
+  communityListSub: Closer | null;
+  communityPostSub: Closer | null;
+  communityApprovalSub: Closer | null;
   refreshTimer: NodeJS.Timeout | null;
   lastCoordsKey: string;
+  lastCommentCoordsKey: string;
+  lastCommunityCoordsKey: string;
   availableCoordinates: number;
   lastEventSeenSec: number;
   lastDeletionSeenSec: number;
   lastRsvpSeenSec: number;
+  lastCommentSeenSec: number;
+  lastCommunityListSeenSec: number;
+  lastCommunityPostSeenSec: number;
+  lastCommunityApprovalSeenSec: number;
   startedAt: number;
-  stats: { events: IngestStats; deletions: IngestStats; rsvps: IngestStats };
+  stats: {
+    events: IngestStats;
+    deletions: IngestStats;
+    rsvps: IngestStats;
+    comments: IngestStats;
+    communityLists: IngestStats;
+    communityPosts: IngestStats;
+    communityApprovals: IngestStats;
+  };
   eventLimiter: TaskLimiter;
   deletionLimiter: TaskLimiter;
   rsvpLimiter: TaskLimiter;
+  commentLimiter: TaskLimiter;
+  communityListLimiter: TaskLimiter;
+  communityPostLimiter: TaskLimiter;
+  communityApprovalLimiter: TaskLimiter;
 };
 type GlobalWithListener = typeof globalThis & { [STORE_KEY]?: ListenerState };
 
@@ -103,25 +130,60 @@ function getState(): ListenerState {
     const eventConcurrency = positiveIntEnv("NOSTRLAB_RELAY_EVENT_INGEST_CONCURRENCY", 4, 1, 32);
     const deletionConcurrency = positiveIntEnv("NOSTRLAB_RELAY_DELETION_INGEST_CONCURRENCY", 4, 1, 32);
     const rsvpConcurrency = positiveIntEnv("NOSTRLAB_RELAY_RSVP_INGEST_CONCURRENCY", 8, 1, 64);
+    const commentConcurrency = positiveIntEnv("NOSTRLAB_RELAY_COMMENT_INGEST_CONCURRENCY", 8, 1, 64);
+    const communityListConcurrency = positiveIntEnv("NOSTRLAB_RELAY_COMMUNITY_LIST_INGEST_CONCURRENCY", 4, 1, 32);
+    const communityPostConcurrency = positiveIntEnv("NOSTRLAB_RELAY_COMMUNITY_POST_INGEST_CONCURRENCY", 8, 1, 64);
     g[STORE_KEY] = {
       pool: new SimplePool(),
       eventSub: null,
       deletionSub: null,
       rsvpSub: null,
+      commentSub: null,
+      communityListSub: null,
+      communityPostSub: null,
+      communityApprovalSub: null,
       refreshTimer: null,
       lastCoordsKey: "",
+      lastCommentCoordsKey: "",
+      lastCommunityCoordsKey: "",
       availableCoordinates: 0,
       lastEventSeenSec: 0,
       lastDeletionSeenSec: 0,
       lastRsvpSeenSec: 0,
+      lastCommentSeenSec: 0,
+      lastCommunityListSeenSec: 0,
+      lastCommunityPostSeenSec: 0,
+      lastCommunityApprovalSeenSec: 0,
       startedAt: Math.floor(Date.now() / 1000),
-      stats: { events: emptyStats(), deletions: emptyStats(), rsvps: emptyStats() },
+      stats: {
+        events: emptyStats(),
+        deletions: emptyStats(),
+        rsvps: emptyStats(),
+        comments: emptyStats(),
+        communityLists: emptyStats(),
+        communityPosts: emptyStats(),
+        communityApprovals: emptyStats(),
+      },
       eventLimiter: createTaskLimiter("event ingest", eventConcurrency),
       deletionLimiter: createTaskLimiter("deletion ingest", deletionConcurrency),
       rsvpLimiter: createTaskLimiter("rsvp ingest", rsvpConcurrency),
+      commentLimiter: createTaskLimiter("comment ingest", commentConcurrency),
+      communityListLimiter: createTaskLimiter("community list ingest", communityListConcurrency),
+      communityPostLimiter: createTaskLimiter("community post ingest", communityPostConcurrency),
+      communityApprovalLimiter: createTaskLimiter("community approval ingest", communityListConcurrency),
     };
   }
   return g[STORE_KEY]!;
+}
+
+async function loadCommunityCoordinates(): Promise<string[]> {
+  const communities = await prisma.community.findMany({
+    select: { organizerPubkey: true, slug: true },
+    take: positiveIntEnv("NOSTRLAB_RELAY_COMMUNITY_COORD_LIMIT", 1000, 1, 5000),
+  });
+  const coords = communities.map((community) => `${KIND_COMMUNITY}:${community.organizerPubkey}:${community.slug}`);
+  coords.sort();
+  return coords;
 }
 
 async function loadCoordinates(): Promise<{ coords: string[]; available: number }> {
@@ -285,6 +347,159 @@ async function refreshRsvpSubscription() {
   );
 }
 
+async function refreshCommentSubscription() {
+  const state = getState();
+  const { coords, available } = await loadCoordinates();
+  const key = coords.join("|");
+  if (key === state.lastCommentCoordsKey && state.commentSub) return;
+  state.lastCommentCoordsKey = key;
+
+  if (state.commentSub) {
+    try { state.commentSub.close(); } catch { /* ignore */ }
+    state.commentSub = null;
+  }
+
+  if (coords.length === 0) return;
+
+  const since = state.lastCommentSeenSec > 0
+    ? state.lastCommentSeenSec - 60
+    : state.startedAt - SINCE_LOOKBACK_SEC;
+
+  const relays = getServerRelays();
+  console.info(
+    `[relay-listener] subscribing to ${relays.length} relays for kind:${KIND_COMMENT} comments on ${coords.length}/${available} event coordinates (since ${new Date(since * 1000).toISOString()})`
+  );
+
+  state.commentSub = state.pool.subscribeMany(
+    relays,
+    { kinds: [KIND_COMMENT], "#a": coords, since },
+    {
+      onevent: async (raw) => {
+        const evt = raw as unknown as NostrEvent;
+        state.commentLimiter.run(async () => {
+          try {
+            const result = await ingestEventComment(evt);
+            state.stats.comments[result.status] = (state.stats.comments[result.status] ?? 0) + 1;
+            if (evt.created_at > state.lastCommentSeenSec) state.lastCommentSeenSec = evt.created_at;
+            if (result.status === "stored") {
+              console.info(`[relay-listener] ingested ${result.type ?? "comment"} ${evt.id.slice(0, 12)}...`);
+            }
+          } catch (e) {
+            state.stats.comments.failed += 1;
+            console.warn(`[relay-listener] comment ingest failed for ${evt.id.slice(0, 12)}...: ${(e as Error).message}`);
+          }
+        });
+      },
+      oneose: () => { /* keep listening */ },
+    }
+  );
+}
+
+async function ensureCommunityListSubscription() {
+  const state = getState();
+  if (state.communityListSub) return;
+
+  const since = state.lastCommunityListSeenSec > 0
+    ? state.lastCommunityListSeenSec - 60
+    : state.startedAt - SINCE_LOOKBACK_SEC;
+
+  const relays = getServerRelays();
+  console.info(
+    `[relay-listener] subscribing to ${relays.length} relays for global kind:${KIND_COMMUNITY_LIST} community lists (since ${new Date(since * 1000).toISOString()})`
+  );
+
+  state.communityListSub = state.pool.subscribeMany(
+    relays,
+    { kinds: [KIND_COMMUNITY_LIST], since },
+    {
+      onevent: async (raw) => {
+        const evt = raw as unknown as NostrEvent;
+        state.communityListLimiter.run(async () => {
+          try {
+            const result = await ingestCommunityList(evt);
+            state.stats.communityLists[result.status] = (state.stats.communityLists[result.status] ?? 0) + 1;
+            if (evt.created_at > state.lastCommunityListSeenSec) state.lastCommunityListSeenSec = evt.created_at;
+            if (result.status === "stored") {
+              console.info(
+                `[relay-listener] ingested community list ${evt.id.slice(0, 12)}... follows=${result.followedCommunityIds.length}`
+              );
+            }
+          } catch (e) {
+            state.stats.communityLists.failed += 1;
+            console.warn(`[relay-listener] community list ingest failed for ${evt.id.slice(0, 12)}...: ${(e as Error).message}`);
+          }
+        });
+      },
+      oneose: () => { /* keep listening */ },
+    }
+  );
+}
+
+async function refreshCommunityModerationSubscriptions() {
+  const state = getState();
+  const coords = await loadCommunityCoordinates();
+  const key = coords.join("|");
+  if (key === state.lastCommunityCoordsKey && state.communityPostSub && state.communityApprovalSub) return;
+  state.lastCommunityCoordsKey = key;
+
+  for (const sub of [state.communityPostSub, state.communityApprovalSub]) {
+    if (sub) try { sub.close(); } catch { /* ignore */ }
+  }
+  state.communityPostSub = null;
+  state.communityApprovalSub = null;
+  if (coords.length === 0) return;
+
+  const relays = getServerRelays();
+  const postSince = state.lastCommunityPostSeenSec > 0
+    ? state.lastCommunityPostSeenSec - 60
+    : state.startedAt - SINCE_LOOKBACK_SEC;
+  const approvalSince = state.lastCommunityApprovalSeenSec > 0
+    ? state.lastCommunityApprovalSeenSec - 60
+    : state.startedAt - SINCE_LOOKBACK_SEC;
+
+  state.communityPostSub = state.pool.subscribeMany(
+    relays,
+    { kinds: [KIND_COMMENT], "#a": coords, since: postSince },
+    {
+      onevent: async (raw) => {
+        const evt = raw as unknown as NostrEvent;
+        state.communityPostLimiter.run(async () => {
+          try {
+            const result = await ingestCommunityPost(evt);
+            state.stats.communityPosts[result.status] = (state.stats.communityPosts[result.status] ?? 0) + 1;
+            if (evt.created_at > state.lastCommunityPostSeenSec) state.lastCommunityPostSeenSec = evt.created_at;
+          } catch (e) {
+            state.stats.communityPosts.failed += 1;
+            console.warn(`[relay-listener] community post ingest failed for ${evt.id.slice(0, 12)}...: ${(e as Error).message}`);
+          }
+        });
+      },
+      oneose: () => { /* keep listening */ },
+    }
+  );
+
+  state.communityApprovalSub = state.pool.subscribeMany(
+    relays,
+    { kinds: [KIND_COMMUNITY_APPROVAL], "#a": coords, since: approvalSince },
+    {
+      onevent: async (raw) => {
+        const evt = raw as unknown as NostrEvent;
+        state.communityApprovalLimiter.run(async () => {
+          try {
+            const result = await ingestCommunityApproval(evt);
+            state.stats.communityApprovals[result.status] = (state.stats.communityApprovals[result.status] ?? 0) + 1;
+            if (evt.created_at > state.lastCommunityApprovalSeenSec) state.lastCommunityApprovalSeenSec = evt.created_at;
+          } catch (e) {
+            state.stats.communityApprovals.failed += 1;
+            console.warn(`[relay-listener] community approval ingest failed for ${evt.id.slice(0, 12)}...: ${(e as Error).message}`);
+          }
+        });
+      },
+      oneose: () => { /* keep listening */ },
+    }
+  );
+}
+
 let booted = false;
 export async function ensureRelayListener(): Promise<void> {
   if (booted) return;
@@ -294,6 +509,9 @@ export async function ensureRelayListener(): Promise<void> {
     await ensureEventSubscription();
     await ensureDeletionSubscription();
     await refreshRsvpSubscription();
+    await refreshCommentSubscription();
+    await ensureCommunityListSubscription();
+    await refreshCommunityModerationSubscriptions();
     state.refreshTimer = setInterval(() => {
       ensureEventSubscription().catch((e) => {
         console.warn("[relay-listener] event subscription failed:", (e as Error).message);
@@ -302,7 +520,16 @@ export async function ensureRelayListener(): Promise<void> {
         console.warn("[relay-listener] deletion subscription failed:", (e as Error).message);
       });
       refreshRsvpSubscription().catch((e) => {
-        console.warn("[relay-listener] refresh failed:", (e as Error).message);
+        console.warn("[relay-listener] RSVP refresh failed:", (e as Error).message);
+      });
+      refreshCommentSubscription().catch((e) => {
+        console.warn("[relay-listener] comment refresh failed:", (e as Error).message);
+      });
+      ensureCommunityListSubscription().catch((e) => {
+        console.warn("[relay-listener] community list subscription failed:", (e as Error).message);
+      });
+      refreshCommunityModerationSubscriptions().catch((e) => {
+        console.warn("[relay-listener] community moderation refresh failed:", (e as Error).message);
       });
     }, REFRESH_INTERVAL_MS);
     if (typeof state.refreshTimer.unref === "function") state.refreshTimer.unref();
@@ -315,20 +542,34 @@ export async function ensureRelayListener(): Promise<void> {
 export function listenerStats() {
   const state = getState();
   return {
-    started: !!state.eventSub || !!state.deletionSub || !!state.rsvpSub,
+    started: !!state.eventSub || !!state.deletionSub || !!state.rsvpSub || !!state.commentSub || !!state.communityListSub || !!state.communityPostSub || !!state.communityApprovalSub,
     eventsStarted: !!state.eventSub,
     deletionsStarted: !!state.deletionSub,
     rsvpsStarted: !!state.rsvpSub,
+    commentsStarted: !!state.commentSub,
+    communityListsStarted: !!state.communityListSub,
+    communityPostsStarted: !!state.communityPostSub,
+    communityApprovalsStarted: !!state.communityApprovalSub,
     coordinates: state.lastCoordsKey ? state.lastCoordsKey.split("|").length : 0,
+    commentCoordinates: state.lastCommentCoordsKey ? state.lastCommentCoordsKey.split("|").length : 0,
+    communityCoordinates: state.lastCommunityCoordsKey ? state.lastCommunityCoordsKey.split("|").length : 0,
     availableCoordinates: state.availableCoordinates,
     lastEventSeenSec: state.lastEventSeenSec,
     lastDeletionSeenSec: state.lastDeletionSeenSec,
     lastRsvpSeenSec: state.lastRsvpSeenSec,
+    lastCommentSeenSec: state.lastCommentSeenSec,
+    lastCommunityListSeenSec: state.lastCommunityListSeenSec,
+    lastCommunityPostSeenSec: state.lastCommunityPostSeenSec,
+    lastCommunityApprovalSeenSec: state.lastCommunityApprovalSeenSec,
     stats: state.stats,
     queue: {
       events: state.eventLimiter.stats(),
       deletions: state.deletionLimiter.stats(),
       rsvps: state.rsvpLimiter.stats(),
+      comments: state.commentLimiter.stats(),
+      communityLists: state.communityListLimiter.stats(),
+      communityPosts: state.communityPostLimiter.stats(),
+      communityApprovals: state.communityApprovalLimiter.stats(),
     },
   };
 }

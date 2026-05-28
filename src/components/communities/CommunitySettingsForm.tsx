@@ -8,6 +8,9 @@ import { BannerUploader } from "@/components/events/BannerUploader";
 import { useNostr } from "@/hooks/useNostr";
 import { hashAuthPayload } from "@/lib/auth-client";
 import { normalizePubkey } from "@/lib/nostr/encode";
+import { buildCalendarList, buildCommunityDefinition } from "@/lib/nostr/event-builder";
+import { clientPublish } from "@/lib/nostr/client-pool";
+import { getClientRelays } from "@/lib/nostr/relays";
 
 interface InitialCommunity {
   id: string;
@@ -37,6 +40,12 @@ function parsePubkeys(raw: string): string[] {
       .filter(Boolean)
       .map((p) => normalizePubkey(p))
   ));
+}
+
+function publicUrl(value: string | null): string | null {
+  if (!value) return null;
+  if (!value.startsWith("/")) return value;
+  return `${window.location.origin}${value}`;
 }
 
 export function CommunitySettingsForm({ initial }: { initial: InitialCommunity }) {
@@ -95,10 +104,32 @@ export function CommunitySettingsForm({ initial }: { initial: InitialCommunity }
           ["payload_hash", payloadHash],
         ],
       });
+      const nextOwner = transferPubkey ?? identity.pubkey;
+      const signedCommunityEvent = nextOwner === identity.pubkey
+        ? await signEvent(buildCommunityDefinition({
+            pubkey: identity.pubkey,
+            slug: initial.slug,
+            name: payload.name,
+            description: payload.description,
+            imageUrl: publicUrl(payload.imageUrl),
+            website: payload.website,
+            tags: payload.tags,
+            moderatorPubkeys: moderators,
+            relays: getClientRelays(),
+          }))
+        : undefined;
+      const signedCalendarEvent = nextOwner === identity.pubkey
+        ? await signEvent(buildCalendarList({
+            pubkey: identity.pubkey,
+            dTag: initial.slug,
+            title: payload.name,
+            description: payload.description,
+          }))
+        : undefined;
       const res = await fetch(`/api/communities/${initial.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...payload, signedAuthEvent: signed }),
+        body: JSON.stringify({ ...payload, signedAuthEvent: signed, signedCommunityEvent, signedCalendarEvent }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -109,6 +140,8 @@ export function CommunitySettingsForm({ initial }: { initial: InitialCommunity }
           : "Community update failed.";
         throw new Error(message);
       }
+      if (signedCommunityEvent) clientPublish(signedCommunityEvent).catch(() => {});
+      if (signedCalendarEvent) clientPublish(signedCalendarEvent).catch(() => {});
       router.push(`/communities/${initial.slug}`);
       router.refresh();
     } catch (e2) {

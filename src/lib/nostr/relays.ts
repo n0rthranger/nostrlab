@@ -1,4 +1,4 @@
-function parseList(raw: string | undefined, fallback: string[]): string[] {
+export function parseRelayList(raw: string | undefined, fallback: string[]): string[] {
   if (!raw) return fallback;
   return raw
     .split(",")
@@ -13,10 +13,10 @@ const DEFAULT_RELAYS = [
 ];
 
 export function getServerRelays(): string[] {
-  return parseList(process.env.NOSTR_RELAYS, DEFAULT_RELAYS);
+  return parseRelayList(process.env.NOSTR_RELAYS, DEFAULT_RELAYS);
 }
 
 export function getClientRelays(): string[] {
   // Available to the browser; do NOT put server-only relays here.
-  return parseList(process.env.NEXT_PUBLIC_NOSTR_RELAYS, DEFAULT_RELAYS);
+  return parseRelayList(process.env.NEXT_PUBLIC_NOSTR_RELAYS, DEFAULT_RELAYS);
 }

@@ -42,8 +42,20 @@ export const rsvpCreateSchema = z.object({
   signedEvent: nostrEventSchema,
 });
 
+export const commentCreateSchema = z.object({
+  signedCommentEvent: nostrEventSchema,
+});
+
+export const announcementCreateSchema = z.object({
+  signedAnnouncementEvent: nostrEventSchema,
+});
+
+export const communityFollowSchema = z.object({
+  signedCommunityListEvent: nostrEventSchema,
+});
+
 export const privateRsvpCreateSchema = z.object({
-  signedAuthEvent: nostrEventSchema,
+  signedAuthEvent: nostrEventSchema.optional(),
   status: z.enum(RSVP_STATUSES),
   private: z.literal(true),
 });
@@ -75,11 +87,13 @@ export const checkInSchema = z.object({
   ticketSecret: z.string().min(8),
   ticketProof: nostrEventSchema.optional(),
   paymentPreimage: z.string().regex(/^[0-9a-f]{64}$/i).optional(),
-  signedAuthEvent: nostrEventSchema,
+  signedAuthEvent: nostrEventSchema.optional(),
 });
 
 export const communityCreateSchema = z.object({
-  signedAuthEvent: nostrEventSchema,
+  signedAuthEvent: nostrEventSchema.optional(),
+  signedCommunityEvent: nostrEventSchema.optional(),
+  signedCalendarEvent: nostrEventSchema.optional(),
   slug: z.string().min(2).max(60).regex(/^[a-z0-9-]+$/),
   name: z.string().min(2).max(80),
   description: z.string().max(2000),
@@ -90,7 +104,9 @@ export const communityCreateSchema = z.object({
 });
 
 export const communityUpdateSchema = z.object({
-  signedAuthEvent: nostrEventSchema,
+  signedAuthEvent: nostrEventSchema.optional(),
+  signedCommunityEvent: nostrEventSchema.optional(),
+  signedCalendarEvent: nostrEventSchema.optional(),
   name: z.string().min(2).max(80),
   description: z.string().max(2000),
   imageUrl: imageUrl.nullable().optional(),
@@ -101,16 +117,24 @@ export const communityUpdateSchema = z.object({
 });
 
 export const waitlistPromoteSchema = z.object({
-  signedAuthEvent: nostrEventSchema,
+  signedAuthEvent: nostrEventSchema.optional(),
   pubkey: hex64.optional(),
 });
 
 export const ticketRecoverSchema = z.object({
-  signedAuthEvent: nostrEventSchema,
+  signedAuthEvent: nostrEventSchema.optional(),
 });
 
 export const banPubkeySchema = z.object({
-  signedAuthEvent: nostrEventSchema,
+  signedAuthEvent: nostrEventSchema.optional(),
   pubkey: hex64,
   reason: z.string().max(500).nullable().optional(),
+});
+
+export const communityPostSchema = z.object({
+  signedPostEvent: nostrEventSchema,
+});
+
+export const communityPostApprovalSchema = z.object({
+  signedApprovalEvent: nostrEventSchema,
 });

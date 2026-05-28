@@ -1,4 +1,4 @@
-// Helpers that produce *unsigned* Nostr events ready to hand to a NIP-07
+// Helpers that produce *unsigned* Nostr events ready to hand to a Nostr
 // signer. Output is strictly NIP-52 compliant for kind 31923 (time-based
 // calendar events) so other Nostr calendar apps render our events natively.
 //
@@ -7,6 +7,10 @@
 
 import type { UnsignedEvent } from "./types";
 import {
+  KIND_COMMENT,
+  KIND_CALENDAR_LIST,
+  KIND_COMMUNITY_LIST,
+  KIND_COMMUNITY_APPROVAL,
   KIND_EVENT_LISTING,
   KIND_EVENT_DELETION,
   KIND_RSVP,
@@ -89,6 +93,10 @@ export interface EventListingInput {
   recurrenceFrequency?: "weekly" | "monthly";
 }
 
+function uniquePubkeys(pubkeys: string[]): string[] {
+  return Array.from(new Set(pubkeys.map((p) => p.toLowerCase()).filter(Boolean)));
+}
+
 export function buildEventListing(input: EventListingInput): UnsignedEvent {
   const tags: string[][] = [
     ["d", input.dTag],
@@ -139,12 +147,82 @@ export function buildEventListing(input: EventListingInput): UnsignedEvent {
   }
 
   if (input.communitySlug) {
-    tags.push(["a", `${KIND_COMMUNITY}:${input.communityOwnerPubkey ?? input.pubkey}:${input.communitySlug}`]);
+    const owner = input.communityOwnerPubkey ?? input.pubkey;
+    tags.push(["a", `${KIND_COMMUNITY}:${owner}:${input.communitySlug}`]);
+    tags.push(["a", `${KIND_CALENDAR_LIST}:${owner}:${input.communitySlug}`]);
   }
 
   return {
     pubkey: input.pubkey,
     kind: KIND_EVENT_LISTING,
+    created_at: nowSec(),
+    content: input.description,
+    tags: withClientTag(tags),
+  };
+}
+
+export interface CommunityDefinitionInput {
+  pubkey: string;
+  slug: string;
+  name: string;
+  description: string;
+  imageUrl?: string | null;
+  website?: string | null;
+  tags?: string[];
+  moderatorPubkeys?: string[];
+  relays?: string[];
+}
+
+export function buildCommunityDefinition(input: CommunityDefinitionInput): UnsignedEvent {
+  const tags: string[][] = [
+    ["d", input.slug],
+    ["name", input.name],
+    ["description", input.description],
+  ];
+
+  if (input.imageUrl) tags.push(["image", input.imageUrl]);
+  if (input.website) tags.push(["r", input.website]);
+
+  for (const tag of input.tags ?? []) {
+    if (tag.trim()) tags.push(["t", tag.trim().toLowerCase()]);
+  }
+
+  for (const pubkey of uniquePubkeys([input.pubkey, ...(input.moderatorPubkeys ?? [])])) {
+    tags.push(["p", pubkey, "", "moderator"]);
+  }
+
+  for (const relay of input.relays ?? []) {
+    tags.push(["relay", relay]);
+  }
+
+  return {
+    pubkey: input.pubkey,
+    kind: KIND_COMMUNITY,
+    created_at: nowSec(),
+    content: input.description,
+    tags: withClientTag(tags),
+  };
+}
+
+export interface CalendarListInput {
+  pubkey: string;
+  dTag: string;
+  title: string;
+  description: string;
+  eventCoordinates?: string[];
+}
+
+export function buildCalendarList(input: CalendarListInput): UnsignedEvent {
+  const tags: string[][] = [
+    ["d", input.dTag],
+    ["title", input.title],
+  ];
+  for (const coord of Array.from(new Set(input.eventCoordinates ?? [])).sort()) {
+    if (coord.startsWith(`${KIND_EVENT_LISTING}:`)) tags.push(["a", coord]);
+  }
+  return {
+    pubkey: input.pubkey,
+    kind: KIND_CALENDAR_LIST,
     created_at: nowSec(),
     content: input.description,
     tags: withClientTag(tags),
@@ -201,6 +279,125 @@ export function buildRsvp(input: RsvpInput): UnsignedEvent {
   };
 }
 
+export interface EventCommentInput {
+  pubkey: string;
+  eventCoordinate: string;
+  organizerPubkey: string;
+  eventNostrId?: string | null;
+  content: string;
+}
+
+function eventCommentTags(input: Omit<EventCommentInput, "pubkey" | "content">): string[][] {
+  const tags: string[][] = [
+    ["A", input.eventCoordinate],
+    ["K", String(KIND_EVENT_LISTING)],
+    ["P", input.organizerPubkey],
+    ["a", input.eventCoordinate],
+    ["k", String(KIND_EVENT_LISTING)],
+    ["p", input.organizerPubkey],
+  ];
+  if (input.eventNostrId) tags.push(["e", input.eventNostrId]);
+  return tags;
+}
+
+export function buildEventComment(input: EventCommentInput): UnsignedEvent {
+  return {
+    pubkey: input.pubkey,
+    kind: KIND_COMMENT,
+    created_at: nowSec(),
+    content: input.content,
+    tags: withClientTag(eventCommentTags(input)),
+  };
+}
+
+export interface EventAnnouncementInput extends EventCommentInput {
+  title: string;
+}
+
+export function buildEventAnnouncement(input: EventAnnouncementInput): UnsignedEvent {
+  return {
+    pubkey: input.pubkey,
+    kind: KIND_COMMENT,
+    created_at: nowSec(),
+    content: input.content,
+    tags: withClientTag([
+      ...eventCommentTags(input),
+      ["t", "announcement"],
+      ["title", input.title],
+      ["subject", input.title],
+    ]),
+  };
+}
+
+export interface CommunityListInput {
+  pubkey: string;
+  communityCoordinates: string[];
+}
+
+export function buildCommunityList(input: CommunityListInput): UnsignedEvent {
+  const coordinates = Array.from(new Set(input.communityCoordinates))
+    .filter((coord) => coord.startsWith(`${KIND_COMMUNITY}:`))
+    .sort();
+  const tags = coordinates.map((coord) => ["a", coord]);
+  const ct = clientTag();
+  if (ct) tags.push(ct);
+  return {
+    pubkey: input.pubkey,
+    kind: KIND_COMMUNITY_LIST,
+    created_at: nowSec(),
+    content: "",
+    tags,
+  };
+}
+
+export interface CommunityPostInput {
+  pubkey: string;
+  communityCoordinate: string;
+  communityOwnerPubkey: string;
+  content: string;
+}
+
+export function buildCommunityPost(input: CommunityPostInput): UnsignedEvent {
+  return {
+    pubkey: input.pubkey,
+    kind: KIND_COMMENT,
+    created_at: nowSec(),
+    content: input.content,
+    tags: withClientTag([
+      ["A", input.communityCoordinate],
+      ["K", String(KIND_COMMUNITY)],
+      ["P", input.communityOwnerPubkey],
+      ["a", input.communityCoordinate],
+      ["k", String(KIND_COMMUNITY)],
+      ["p", input.communityOwnerPubkey],
+    ]),
+  };
+}
+
+export interface CommunityPostApprovalInput {
+  pubkey: string;
+  communityCoordinate: string;
+  postId: string;
+  postAuthorPubkey: string;
+  postKind?: number;
+  rawPostEvent?: unknown;
+}
+
+export function buildCommunityPostApproval(input: CommunityPostApprovalInput): UnsignedEvent {
+  return {
+    pubkey: input.pubkey,
+    kind: KIND_COMMUNITY_APPROVAL,
+    created_at: nowSec(),
+    content: input.rawPostEvent ? JSON.stringify(input.rawPostEvent) : "",
+    tags: withClientTag([
+      ["a", input.communityCoordinate],
+      ["e", input.postId],
+      ["p", input.postAuthorPubkey],
+      ["k", String(input.postKind ?? KIND_COMMENT)],
+    ]),
+  };
+}
+
 export interface TicketProofInput {
   pubkey: string;          // NostrLab app issuer
   ticketId: string;
@@ -242,6 +439,14 @@ export function buildTicketProof(input: TicketProofInput): UnsignedEvent {
 
 export function eventCoordinate(organizerPubkey: string, dTag: string): string {
   return `${KIND_EVENT_LISTING}:${organizerPubkey}:${dTag}`;
+}
+
+export function calendarCoordinate(ownerPubkey: string, dTag: string): string {
+  return `${KIND_CALENDAR_LIST}:${ownerPubkey}:${dTag}`;
+}
+
+export function communityCoordinate(ownerPubkey: string, dTag: string): string {
+  return `${KIND_COMMUNITY}:${ownerPubkey}:${dTag}`;
 }
 
 /** Deterministic d-tag for RSVPs so they're replaceable per (user, event). */

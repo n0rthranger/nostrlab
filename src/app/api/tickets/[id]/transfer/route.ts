@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSessionPubkey } from "@/lib/session";
-import { verifyAuthEnvelope } from "@/lib/auth";
+import { authEventForRequest, verifyAuthEnvelope } from "@/lib/auth";
 import { nostrEventSchema } from "@/lib/validation";
 import { normalizePubkey } from "@/lib/nostr/encode";
 import { ensureUser } from "@/lib/nostr/profile";
@@ -10,7 +10,7 @@ import { notifyPubkey } from "@/lib/notifications";
 
 const transferSchema = z.object({
   recipientPubkey: z.string().min(1),
-  signedAuthEvent: nostrEventSchema,
+  signedAuthEvent: nostrEventSchema.optional(),
 });
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -43,10 +43,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   const payload = { ticketId: id, recipientPubkey };
-  const auth = verifyAuthEnvelope(parsed.data.signedAuthEvent, {
+  const authEvent = authEventForRequest(req, parsed.data.signedAuthEvent);
+  if (!authEvent) return NextResponse.json({ error: "missing auth event" }, { status: 401 });
+  const auth = verifyAuthEnvelope(authEvent, {
     expectedAction: "ticket.transfer",
     expectedTags: { t: id },
     expectedPayload: payload,
+    request: req,
   });
   if (!auth.ok || auth.pubkey !== sessionPubkey) {
     return NextResponse.json({ error: auth.reason ?? "unauthorized" }, { status: 401 });

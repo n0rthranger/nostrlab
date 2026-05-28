@@ -9,6 +9,7 @@ import { Empty } from "@/components/ui/Empty";
 import { shortNpub } from "@/lib/utils";
 import { getSessionPubkey } from "@/lib/session";
 import { CommunityFollowButton } from "@/components/communities/CommunityFollowButton";
+import { CommunityPosts } from "@/components/communities/CommunityPosts";
 
 export const dynamic = "force-dynamic";
 
@@ -83,6 +84,8 @@ export default async function CommunityPage({
           <div className="mt-5 flex items-center gap-3 flex-wrap">
             <CommunityFollowButton
               communityId={community.id}
+              communitySlug={community.slug}
+              communityOwnerPubkey={community.organizerPubkey}
               initiallyFollowing={isFollowing}
               initialFollowerCount={community._count.followers}
             />
@@ -98,6 +101,12 @@ export default async function CommunityPage({
                 Official events are limited to approved community hosts.
               </span>
             )}
+            <a
+              href={`/api/communities/${encodeURIComponent(community.slug)}/ics`}
+              className="h-9 px-4 inline-flex items-center rounded-full border border-border text-sm font-medium hover:bg-surface2 transition-colors"
+            >
+              Subscribe
+            </a>
             {isOwner && (
               <Link
                 href={`/communities/${encodeURIComponent(community.slug)}/settings`}
@@ -129,6 +138,13 @@ export default async function CommunityPage({
           </div>
         </section>
       )}
+
+      <CommunityPosts
+        communityId={community.id}
+        communitySlug={community.slug}
+        communityOwnerPubkey={community.organizerPubkey}
+        initialCanModerate={canHost}
+      />
 
       <aside className="grid md:grid-cols-2 gap-4">
         <Link

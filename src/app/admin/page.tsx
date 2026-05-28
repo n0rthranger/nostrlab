@@ -13,10 +13,19 @@ interface BannedRow {
   bannedAt: string;
 }
 
+interface OpsSnapshot {
+  ts: string;
+  counters: Record<string, number>;
+  relayListener: Record<string, unknown>;
+  relayPublisher: Record<string, unknown>;
+  paymentReconciler: Record<string, unknown>;
+}
+
 export default function AdminPage() {
   const { identity, login, signEvent, hasSigner } = useNostr();
   const [list, setList] = useState<BannedRow[] | null>(null);
   const [adminPubkey, setAdminPubkey] = useState<string | null>(null);
+  const [ops, setOps] = useState<OpsSnapshot | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -30,6 +39,7 @@ export default function AdminPage() {
       .then((j) => setAdminPubkey(j.adminPubkey ?? null))
       .catch(() => {});
     refresh();
+    refreshOps();
   }, []);
 
   async function refresh() {
@@ -37,6 +47,13 @@ export default function AdminPage() {
       .then((r) => r.json())
       .then((j) => setList(j.list ?? []))
       .catch(() => setList([]));
+  }
+
+  async function refreshOps() {
+    fetch("/api/admin/ops")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => setOps(j))
+      .catch(() => setOps(null));
   }
 
   const isAdmin = identity && adminPubkey && identity.pubkey.toLowerCase() === adminPubkey.toLowerCase();
@@ -132,7 +149,7 @@ export default function AdminPage() {
         <p className="text-muted mt-2 text-sm">Admin: {adminPubkey.slice(0, 16)}…</p>
         <div className="mt-6">
           <Button size="lg" onClick={() => login().catch(() => {})} disabled={!hasSigner}>
-            Sign in with Nostr
+            {hasSigner ? "Sign in with Nostr" : "Use header Sign in for Nostr Connect"}
           </Button>
         </div>
       </div>
@@ -155,11 +172,40 @@ export default function AdminPage() {
     <div className="max-w-3xl mx-auto px-5 py-10 space-y-8">
       <header>
         <div className="text-xs font-medium text-accent">Admin</div>
-        <h1 className="text-3xl md:text-4xl font-semibold tracking-[-0.025em] mt-1">Moderation</h1>
+        <h1 className="text-3xl md:text-4xl font-semibold tracking-[-0.025em] mt-1">Operations</h1>
         <p className="text-muted text-sm mt-2 max-w-prose leading-relaxed">
           Banned pubkeys can't publish events or RSVPs through NostrLab, and their existing events are hidden from feeds. They remain on the underlying Nostr relays — other clients can still see them. We are a selective indexer, not a censor.
         </p>
       </header>
+
+      <section className="rounded-2xl bg-surface border border-border shadow-soft p-5 space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">Runtime health</h2>
+            <div className="text-xs text-muted mt-1">
+              {ops?.ts ? `Updated ${new Date(ops.ts).toLocaleString()}` : "Loading..."}
+            </div>
+          </div>
+          <Button size="sm" variant="outline" onClick={refreshOps}>Refresh</Button>
+        </div>
+        {ops && (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {Object.entries(ops.counters).map(([key, value]) => (
+                <div key={key} className="rounded-xl border border-border bg-surface2 p-3">
+                  <div className="text-[11px] text-muted">{key}</div>
+                  <div className="text-2xl font-semibold tabular-nums">{value}</div>
+                </div>
+              ))}
+            </div>
+            <div className="grid md:grid-cols-3 gap-3">
+              <OpsJson title="Relay listener" value={ops.relayListener} />
+              <OpsJson title="Relay publisher" value={ops.relayPublisher} />
+              <OpsJson title="Payments" value={ops.paymentReconciler} />
+            </div>
+          </>
+        )}
+      </section>
 
       <section className="rounded-2xl bg-surface border border-border shadow-soft p-5 space-y-3">
         <div className="font-medium">Ban a pubkey</div>
@@ -208,6 +254,17 @@ export default function AdminPage() {
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+function OpsJson({ title, value }: { title: string; value: unknown }) {
+  return (
+    <div className="rounded-xl border border-border bg-surface2 p-3 min-w-0">
+      <div className="text-xs font-medium mb-2">{title}</div>
+      <pre className="text-[11px] leading-relaxed text-muted overflow-auto max-h-56 whitespace-pre-wrap">
+        {JSON.stringify(value, null, 2)}
+      </pre>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { listenerStats } from "@/lib/nostr/relay-listener";
+import { relayPoolStats } from "@/lib/nostr/relay-pool";
 import { paymentReconcilerStats } from "@/lib/payments/reconcile-worker";
 
 export const dynamic = "force-dynamic";
@@ -59,6 +60,7 @@ export async function GET(req: Request) {
         unreadNotifications,
       },
       relayListener: listenerStats(),
+      relayPublisher: relayPoolStats(),
       paymentReconciler: paymentReconcilerStats(),
     },
     { headers: { "Cache-Control": "no-store" } }

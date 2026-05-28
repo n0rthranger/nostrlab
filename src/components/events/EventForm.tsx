@@ -64,11 +64,68 @@ function toDatetimeLocal(value?: string | null): string {
   return local.toISOString().slice(0, 16);
 }
 
+function dateToDatetimeLocal(date: Date): string {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
 function shiftDate(date: Date, frequency: "weekly" | "monthly", index: number): Date {
   const next = new Date(date);
   if (frequency === "weekly") next.setDate(next.getDate() + index * 7);
   else next.setMonth(next.getMonth() + index);
   return next;
+}
+
+function icsUnescape(value: string): string {
+  return value
+    .replace(/\\n/gi, "\n")
+    .replace(/\\,/g, ",")
+    .replace(/\\;/g, ";")
+    .replace(/\\\\/g, "\\")
+    .trim();
+}
+
+function icsValue(lines: string[], name: string): string | null {
+  const prefix = name.toUpperCase();
+  const line = lines.find((candidate) => {
+    const key = candidate.split(":", 1)[0]?.toUpperCase() ?? "";
+    return key === prefix || key.startsWith(`${prefix};`);
+  });
+  if (!line) return null;
+  const index = line.indexOf(":");
+  return index >= 0 ? icsUnescape(line.slice(index + 1)) : null;
+}
+
+function parseIcsDate(value: string | null): Date | null {
+  if (!value) return null;
+  const dateOnly = /^(\d{4})(\d{2})(\d{2})$/.exec(value);
+  if (dateOnly) {
+    return new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]), 0, 0);
+  }
+  const stamp = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/.exec(value);
+  if (!stamp) return null;
+  const [, y, m, d, hh, mm, ss, z] = stamp;
+  return z
+    ? new Date(Date.UTC(Number(y), Number(m) - 1, Number(d), Number(hh), Number(mm), Number(ss)))
+    : new Date(Number(y), Number(m) - 1, Number(d), Number(hh), Number(mm), Number(ss));
+}
+
+function parseIcs(text: string) {
+  const lines = text
+    .replace(/\r?\n[ \t]/g, "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const start = parseIcsDate(icsValue(lines, "DTSTART"));
+  const end = parseIcsDate(icsValue(lines, "DTEND"));
+  const location = icsValue(lines, "LOCATION");
+  return {
+    title: icsValue(lines, "SUMMARY"),
+    description: icsValue(lines, "DESCRIPTION"),
+    start,
+    end,
+    location,
+  };
 }
 
 export function EventForm({ initialEvent, submitLabel, allowRecurrence = true }: EventFormProps) {
@@ -262,9 +319,44 @@ export function EventForm({ initialEvent, submitLabel, allowRecurrence = true }:
     }
   }
 
+  async function importIcs(file: File) {
+    setErr(null);
+    try {
+      const parsed = parseIcs(await file.text());
+      if (parsed.title) setTitle(parsed.title);
+      if (parsed.description) setDescription(parsed.description);
+      if (parsed.start) setStartsAt(dateToDatetimeLocal(parsed.start));
+      if (parsed.end) setEndsAt(dateToDatetimeLocal(parsed.end));
+      if (parsed.location) {
+        const parts = parsed.location.split(",").map((part) => part.trim()).filter(Boolean);
+        if (parts.length > 1) {
+          setVenue(parts[0]);
+          setCity(parts.slice(1).join(", "));
+        } else {
+          setCity(parsed.location);
+        }
+      }
+    } catch {
+      setErr("Could not import that calendar file.");
+    }
+  }
+
   return (
     <form onSubmit={submit} className="space-y-8">
       <Section title="The basics" hint="What's it called and what's it about.">
+        {!isEditing && (
+          <Field label="Import .ics">
+            <input
+              type="file"
+              accept=".ics,text/calendar"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) importIcs(file);
+                e.currentTarget.value = "";
+              }}
+            />
+          </Field>
+        )}
         <Field label="Title" required>
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Chicago Bitcoin BBQ" />
         </Field>
@@ -418,9 +510,9 @@ export function EventForm({ initialEvent, submitLabel, allowRecurrence = true }:
       {duplicateCheck.status === "match" && (
         <DuplicateWarning match={duplicateCheck.match} />
       )}
-      {!hasSigner && (
+      {!hasSigner && !identity && (
         <div className="rounded-lg bg-surface2 text-fg2 px-4 py-3 text-sm">
-          No NIP-07 signer detected. Install Alby or nos2x to publish.
+          Sign in from the header with Nostr Connect, or install Alby/nos2x to publish.
         </div>
       )}
 

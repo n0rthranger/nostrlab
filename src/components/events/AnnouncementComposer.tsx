@@ -3,9 +3,17 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { useNostr } from "@/hooks/useNostr";
-import { hashAuthPayload } from "@/lib/auth-client";
+import { clientPublish } from "@/lib/nostr/client-pool";
+import { buildEventAnnouncement, eventCoordinate } from "@/lib/nostr/event-builder";
 
-export function AnnouncementComposer({ eventId }: { eventId: string }) {
+interface AnnouncementComposerProps {
+  eventId: string;
+  organizerPubkey: string;
+  dTag: string;
+  nostrId: string;
+}
+
+export function AnnouncementComposer({ eventId, organizerPubkey, dTag, nostrId }: AnnouncementComposerProps) {
   const { identity, login, signEvent } = useNostr();
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -21,30 +29,31 @@ export function AnnouncementComposer({ eventId }: { eventId: string }) {
     if (!currentIdentity) {
       try { currentIdentity = await login(); } catch (er) { setErr((er as Error).message); return; }
     }
-    const payload = { eventId, title: title.trim(), body: body.trim() };
-    if (!payload.title || !payload.body) {
+    const nextTitle = title.trim();
+    const nextBody = body.trim();
+    if (!nextTitle || !nextBody) {
       setErr("Title and message are required.");
       return;
     }
     setBusy(true);
     try {
-      const payloadHash = await hashAuthPayload(payload);
       const signed = await signEvent({
-        pubkey: currentIdentity.pubkey,
-        kind: 27235,
-        created_at: Math.floor(Date.now() / 1000),
-        content: "",
-        tags: [
-          ["action", "event.announcement"],
-          ["e", eventId],
-          ["payload_hash", payloadHash],
-        ],
+        ...buildEventAnnouncement({
+          pubkey: currentIdentity.pubkey,
+          eventCoordinate: eventCoordinate(organizerPubkey, dTag),
+          organizerPubkey,
+          eventNostrId: nostrId,
+          title: nextTitle,
+          content: nextBody,
+        }),
       });
+      const publishP = clientPublish(signed);
       const res = await fetch(`/api/events/${eventId}/announcements`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...payload, signedAuthEvent: signed }),
+        body: JSON.stringify({ signedAnnouncementEvent: signed }),
       });
+      await publishP.catch(() => ({ ok: 0, failed: 0 }));
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Could not send announcement.");
       setTitle("");

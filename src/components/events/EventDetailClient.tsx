@@ -92,7 +92,7 @@ export function EventDetailClient({
       <div className="border-t border-border px-5 py-3 flex items-center justify-between text-xs text-muted">
         <span className="inline-flex items-center gap-1.5">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-12V5l-8-3-8 3v5c0 8 8 12 8 12z"/></svg>
-          Signed via NIP-07
+          Signed by Nostr key
         </span>
         <Button
           variant="ghost"

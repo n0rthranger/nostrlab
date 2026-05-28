@@ -1,17 +1,9 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { verifyAuthEnvelope } from "@/lib/auth";
-import { nostrEventSchema } from "@/lib/validation";
-import { ensureUser } from "@/lib/nostr/profile";
+import { announcementCreateSchema } from "@/lib/validation";
 import { userToDTO } from "@/lib/dto";
-import { notifyEventRecipients } from "@/lib/notifications";
-
-const announcementSchema = z.object({
-  title: z.string().min(1).max(120),
-  body: z.string().min(1).max(5000),
-  signedAuthEvent: nostrEventSchema,
-});
+import { ingestEventComment } from "@/lib/nostr/ingest-social";
+import { publishToRelays } from "@/lib/nostr/relay-pool";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -36,47 +28,29 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   let body: unknown;
   try { body = await req.json(); } catch { return NextResponse.json({ error: "invalid json" }, { status: 400 }); }
-  const parsed = announcementSchema.safeParse(body);
+  const parsed = announcementCreateSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
-  const event = await prisma.event.findUnique({
-    where: { id },
-    include: { cohosts: true },
-  });
+  const event = await prisma.event.findUnique({ where: { id }, select: { id: true } });
   if (!event) return NextResponse.json({ error: "event not found" }, { status: 404 });
 
-  const payload = {
-    eventId: id,
-    title: parsed.data.title.trim(),
-    body: parsed.data.body.trim(),
-  };
-  const auth = verifyAuthEnvelope(parsed.data.signedAuthEvent, {
-    expectedAction: "event.announcement",
-    expectedTags: { e: id },
-    expectedPayload: payload,
+  const result = await ingestEventComment(parsed.data.signedAnnouncementEvent, {
+    expectedEventId: id,
+    expectedAnnouncement: true,
+    notifyAnnouncements: true,
   });
-  if (!auth.ok || !auth.pubkey) return NextResponse.json({ error: auth.reason ?? "unauthorized" }, { status: 401 });
-  const allowed = event.organizerPubkey === auth.pubkey || event.cohosts.some((c) => c.pubkey === auth.pubkey);
-  if (!allowed) return NextResponse.json({ error: "not an organizer" }, { status: 403 });
+  if (result.status === "skipped" || result.type !== "announcement" || !result.id) {
+    const status = result.reason === "not an organizer" ? 403 : 400;
+    return NextResponse.json({ error: result.reason ?? "invalid announcement" }, { status });
+  }
 
-  await ensureUser(auth.pubkey);
-  const announcement = await prisma.eventAnnouncement.create({
-    data: {
-      eventId: id,
-      pubkey: auth.pubkey,
-      title: payload.title,
-      body: payload.body,
-    },
+  const announcement = await prisma.eventAnnouncement.findUnique({
+    where: { id: result.id },
     include: { author: true },
   });
-  await notifyEventRecipients({
-    eventId: id,
-    type: "ANNOUNCEMENT",
-    title: `${event.title}: ${announcement.title}`,
-    body: announcement.body,
-    skipPubkey: auth.pubkey,
-    announcementId: announcement.id,
-  });
+  if (!announcement) return NextResponse.json({ error: "announcement not found" }, { status: 500 });
+
+  if (result.status === "stored") publishToRelays(parsed.data.signedAnnouncementEvent).catch(() => {});
 
   return NextResponse.json({
     announcement: {

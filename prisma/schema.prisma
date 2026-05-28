@@ -38,6 +38,9 @@ model User {
   communities   Community[]          @relation("CommunityOrganizer")
   moderating    CommunityModerator[]
   follows       CommunityFollow[]
+  followList    CommunityFollowList?
+  communityPosts CommunityPost[]
+  communityPostApprovals CommunityPostApproval[]
   comments      EventComment[]
   announcements EventAnnouncement[]
   notifications Notification[]       @relation("NotificationRecipient")
@@ -328,12 +331,18 @@ model Community {
   website         String?
   verifiedAt      DateTime?
   verifiedMethod  String?
+  nostrId         String?              @unique
+  rawEvent        Json?
+  calendarNostrId String?              @unique
+  rawCalendarEvent Json?
   organizerPubkey String
   organizer       User                 @relation("CommunityOrganizer", fields: [organizerPubkey], references: [pubkey])
   moderators      CommunityModerator[]
   tags            CommunityTag[]
   events          Event[]
   followers       CommunityFollow[]
+  posts           CommunityPost[]
+  postApprovals   CommunityPostApproval[]
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
 }
@@ -359,12 +368,61 @@ model CommunityTag {
 model CommunityFollow {
   communityId String
   pubkey      String
+  nostrId     String?
+  rawEvent    Json?
   createdAt   DateTime @default(now())
 
   community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
   user      User      @relation(fields: [pubkey], references: [pubkey])
 
   @@id([communityId, pubkey])
+  @@index([pubkey])
+  @@index([nostrId])
+}
+
+model CommunityFollowList {
+  pubkey         String   @id
+  nostrId        String   @unique
+  eventCreatedAt Int
+  rawEvent       Json
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [pubkey], references: [pubkey], onDelete: Cascade)
+}
+
+model CommunityPost {
+  id          String    @id @default(cuid())
+  communityId String
+  pubkey      String
+  body        String    @db.Text
+  nostrId     String    @unique
+  rawEvent    Json
+  approvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [pubkey], references: [pubkey])
+  approvals CommunityPostApproval[]
+
+  @@index([communityId, approvedAt, createdAt])
+  @@index([pubkey])
+}
+
+model CommunityPostApproval {
+  id          String   @id @default(cuid())
+  postId      String
+  communityId String
+  pubkey      String
+  nostrId     String   @unique
+  rawEvent    Json
+  createdAt   DateTime @default(now())
+
+  post      CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  community Community     @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  moderator User          @relation(fields: [pubkey], references: [pubkey])
+
+  @@unique([postId, pubkey])
+  @@index([communityId, createdAt])
   @@index([pubkey])
 }
 
@@ -373,7 +431,8 @@ model EventComment {
   eventId   String
   pubkey    String
   body      String   @db.Text
-  nostrId   String?
+  nostrId   String?  @unique
+  rawEvent  Json?
   createdAt DateTime @default(now())
 
   event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
@@ -389,6 +448,8 @@ model EventAnnouncement {
   pubkey    String
   title     String
   body      String   @db.Text
+  nostrId   String?  @unique
+  rawEvent  Json?
   createdAt DateTime @default(now())
 
   event  Event @relation(fields: [eventId], references: [id], onDelete: Cascade)

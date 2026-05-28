@@ -3,14 +3,21 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { useNostr } from "@/hooks/useNostr";
-import { hashAuthPayload } from "@/lib/auth-client";
+import { clientPublish } from "@/lib/nostr/client-pool";
+import { buildCommunityList } from "@/lib/nostr/event-builder";
+import { KIND_COMMUNITY } from "@/lib/nostr/kinds";
+import type { CommunityDTO } from "@/types";
 
 export function CommunityFollowButton({
   communityId,
+  communitySlug,
+  communityOwnerPubkey,
   initiallyFollowing,
   initialFollowerCount,
 }: {
   communityId: string;
+  communitySlug: string;
+  communityOwnerPubkey: string;
   initiallyFollowing: boolean;
   initialFollowerCount: number;
 }) {
@@ -33,25 +40,27 @@ export function CommunityFollowButton({
     }
     setBusy(true);
     try {
-      const action = following ? "community.unfollow" : "community.follow";
-      const payload = { communityId };
-      const payloadHash = await hashAuthPayload(payload);
-      const signed = await signEvent({
+      const currentList = await fetch(`/api/communities?follower=${encodeURIComponent(currentIdentity.pubkey)}`)
+        .then((res) => (res.ok ? res.json() : { communities: [] }))
+        .then((json) => (json.communities ?? []) as CommunityDTO[]);
+      const targetCoordinate = `${KIND_COMMUNITY}:${communityOwnerPubkey}:${communitySlug}`;
+      const communityCoordinates = new Set(
+        currentList.map((community) => `${KIND_COMMUNITY}:${community.organizer.pubkey}:${community.slug}`)
+      );
+      if (following) communityCoordinates.delete(targetCoordinate);
+      else communityCoordinates.add(targetCoordinate);
+
+      const signed = await signEvent(buildCommunityList({
         pubkey: currentIdentity.pubkey,
-        kind: 27235,
-        created_at: Math.floor(Date.now() / 1000),
-        content: "",
-        tags: [
-          ["action", action],
-          ["community_id", communityId],
-          ["payload_hash", payloadHash],
-        ],
-      });
+        communityCoordinates: Array.from(communityCoordinates),
+      }));
+      const publishP = clientPublish(signed);
       const res = await fetch(`/api/communities/${communityId}/follow`, {
         method: following ? "DELETE" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ signedAuthEvent: signed }),
+        body: JSON.stringify({ signedCommunityListEvent: signed }),
       });
+      await publishP.catch(() => ({ ok: 0, failed: 0 }));
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Could not update follow.");
       setFollowing(json.following);

@@ -335,7 +335,13 @@ export default async function EventDetailPage({
           </aside>
         </div>
         <div className="mt-10 border-t border-border pt-8">
-          <EventDiscussion eventId={detail.id} disabled={detail.status === "CANCELLED"} />
+          <EventDiscussion
+            eventId={detail.id}
+            organizerPubkey={organizerPubkey}
+            dTag={dTag}
+            nostrId={nostrId}
+            disabled={detail.status === "CANCELLED"}
+          />
         </div>
       </article>
     </>
