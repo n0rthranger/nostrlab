@@ -27,10 +27,11 @@ export function RsvpButtons({
   eventId, organizerPubkey, dTag, capacity, goingCount = 0, initialStatus, alreadyOwnedTicketId, onChange,
 }: Props) {
   const router = useRouter();
-  const { identity, signEvent, login, hasSigner } = useNostr();
+  const { identity, signEvent, login, hasSigner, signer } = useNostr();
   const [status, setStatus] = useState<RsvpStatusString | null>(initialStatus ?? null);
   const [busy, setBusy] = useState<RsvpStatusString | null>(null);
   const [privateMode, setPrivateMode] = useState(false);
+  const [privateNote, setPrivateNote] = useState("");
   const [err, setErr] = useState<string | null>(null);
 
   async function handleClick(s: RsvpStatusString) {
@@ -45,7 +46,21 @@ export function RsvpButtons({
       let publishP: Promise<unknown> | null = null;
       let body: unknown;
       if (privateMode) {
-        const payload = { eventId, status: s, private: true };
+        if (!signer?.nip04) {
+          throw new Error("Encrypted private RSVPs require a NIP-07 signer with NIP-04 support.");
+        }
+        const encryptedPayload = {
+          method: "nip04" as const,
+          recipientPubkey: organizerPubkey,
+          ciphertext: await signer.nip04.encrypt(organizerPubkey, JSON.stringify({
+            eventId,
+            status: s,
+            attendeePubkey: currentIdentity.pubkey,
+            note: privateNote.trim() || undefined,
+            createdAt: new Date().toISOString(),
+          })),
+        };
+        const payload = { eventId, status: s, private: true, encryptedPayload };
         const signedAuthEvent = await signEvent({
           pubkey: currentIdentity.pubkey,
           kind: 27235,
@@ -58,7 +73,7 @@ export function RsvpButtons({
             ["payload_hash", await hashAuthPayload(payload)],
           ],
         });
-        body = { signedAuthEvent, status: s, private: true };
+        body = { signedAuthEvent, status: s, private: true, encryptedPayload };
       } else {
         const unsigned = buildRsvp({
           pubkey: currentIdentity.pubkey,
@@ -155,6 +170,16 @@ export function RsvpButtons({
         />
         Keep my RSVP off public relays
       </label>
+      {privateMode && (
+        <textarea
+          value={privateNote}
+          onChange={(e) => setPrivateNote(e.target.value)}
+          rows={2}
+          maxLength={500}
+          placeholder="Optional private note for the organizer"
+          className="!min-h-0 !rounded-xl text-xs"
+        />
+      )}
 
       {!hasSigner && !identity && (
         <div className="text-[11px] text-muted text-center pt-1">

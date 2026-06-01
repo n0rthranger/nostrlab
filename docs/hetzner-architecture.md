@@ -26,6 +26,7 @@ Dedicated worker pool
   +--> relay listener / RSVP ingest
   +--> profile refresh jobs
   +--> invoice reconciliation
+  +--> notification delivery and saved event alerts
 
 Media storage
   |
@@ -70,6 +71,8 @@ Run the same build as a worker process with:
 NOSTRLAB_RUNTIME_ROLE=worker
 ENABLE_RELAY_LISTENER=true
 ENABLE_PAYMENT_RECONCILER=true
+ENABLE_NOTIFICATION_DELIVERY=true
+ENABLE_EVENT_ALERTS=true
 ```
 
 Only one worker should subscribe to relay events and reconcile payments at first. At larger volume, shard relay ingest by event coordinate hash so each shard owns a disjoint set of subscriptions, and split payment reconciliation into its own worker/queue.
@@ -116,6 +119,12 @@ At scale, move invoice reconciliation to a worker queue:
 - Client polls a lightweight status endpoint.
 
 The built-in reconciler runs when `ENABLE_PAYMENT_RECONCILER=true`; it checks pending invoices, expires stale rows, and issues tickets even if the buyer closes the browser.
+
+### Communications
+
+In-app notifications are persisted in Postgres. The worker can deliver those notifications through Nostr DMs, webhook integrations, or both with `ENABLE_NOTIFICATION_DELIVERY=true` and `NOSTRLAB_NOTIFICATION_CHANNELS=nostr_dm,webhook`. Nostr DM delivery uses `NOSTRLAB_APP_NSEC`; webhook delivery requires a public HTTPS `NOSTRLAB_NOTIFICATION_WEBHOOK_URL`.
+
+Saved event alerts should run only on worker nodes with `ENABLE_EVENT_ALERTS=true`. The alert scanner turns matching saved searches into notifications, so notification delivery should be enabled if you want alerts to leave the dashboard.
 
 ## Security Baseline
 

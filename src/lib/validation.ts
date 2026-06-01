@@ -58,6 +58,11 @@ export const privateRsvpCreateSchema = z.object({
   signedAuthEvent: nostrEventSchema.optional(),
   status: z.enum(RSVP_STATUSES),
   private: z.literal(true),
+  encryptedPayload: z.object({
+    method: z.literal("nip04"),
+    recipientPubkey: hex64,
+    ciphertext: z.string().min(1).max(12000),
+  }).optional(),
 });
 
 export const eventFilterSchema = z.object({
@@ -75,6 +80,19 @@ export const eventFilterSchema = z.object({
   radius: z.coerce.number().int().min(1).max(500).default(50),
   limit: z.coerce.number().int().min(1).max(200).default(100),
   cursor: z.string().optional(),
+});
+
+export const savedEventSearchCreateSchema = z.object({
+  name: z.string().min(1).max(80).optional(),
+  q: z.string().max(120).optional(),
+  city: z.string().max(120).optional(),
+  tag: z.string().max(40).optional(),
+  category: z.enum(EVENT_CATEGORY_SLUGS).optional(),
+  mode: z.enum(EVENT_MODES).optional(),
+  paid: z.enum(["free", "paid"]).optional(),
+  lat: z.coerce.number().min(-90).max(90).optional(),
+  lng: z.coerce.number().min(-180).max(180).optional(),
+  radius: z.coerce.number().int().min(1).max(500).optional(),
 });
 
 export const invoiceCreateSchema = z.object({

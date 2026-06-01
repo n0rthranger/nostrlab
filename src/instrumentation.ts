@@ -34,6 +34,24 @@ export async function register() {
     }
   }
 
+  if (process.env.ENABLE_NOTIFICATION_DELIVERY === "true") {
+    try {
+      const { ensureNotificationDeliveryWorker } = await import("./lib/communications/notification-delivery-worker");
+      ensureNotificationDeliveryWorker();
+    } catch (e) {
+      await reportError("notification_delivery.start_failed", e);
+    }
+  }
+
+  if (process.env.ENABLE_EVENT_ALERTS === "true") {
+    try {
+      const { ensureEventAlertWorker } = await import("./lib/discovery/event-alert-worker");
+      ensureEventAlertWorker();
+    } catch (e) {
+      await reportError("event_alerts.start_failed", e);
+    }
+  }
+
   if (process.env.ENABLE_RELAY_LISTENER !== "true") return;
   try {
     const { ensureRelayListener } = await import("./lib/nostr/relay-listener");

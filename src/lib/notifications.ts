@@ -1,5 +1,6 @@
 import type { NotificationType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { enqueueNotificationDeliveries } from "@/lib/communications/notification-delivery";
 
 async function eventRecipientPubkeys(eventId: string, skipPubkey?: string): Promise<string[]> {
   const [rsvps, tickets] = await Promise.all([
@@ -36,16 +37,20 @@ export async function notifyEventRecipients({
 }) {
   const recipients = await eventRecipientPubkeys(eventId, skipPubkey);
   if (recipients.length === 0) return;
-  await prisma.notification.createMany({
-    data: recipients.map((recipientPubkey) => ({
-      recipientPubkey,
-      type,
-      title,
-      body,
-      eventId,
-      announcementId,
-    })),
-  });
+  const notifications = await prisma.$transaction(
+    recipients.map((recipientPubkey) => prisma.notification.create({
+      data: {
+        recipientPubkey,
+        type,
+        title,
+        body,
+        eventId,
+        announcementId,
+      },
+      select: { id: true, recipientPubkey: true },
+    }))
+  );
+  await enqueueNotificationDeliveries(notifications);
 }
 
 export async function notifyPubkey({
@@ -63,7 +68,7 @@ export async function notifyPubkey({
   eventId?: string;
   ticketId?: string;
 }) {
-  await prisma.notification.create({
+  const notification = await prisma.notification.create({
     data: {
       recipientPubkey: pubkey.toLowerCase(),
       type,
@@ -72,5 +77,7 @@ export async function notifyPubkey({
       eventId,
       ticketId,
     },
+    select: { id: true, recipientPubkey: true },
   });
+  await enqueueNotificationDeliveries([notification]);
 }

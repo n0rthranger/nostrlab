@@ -28,6 +28,7 @@ NOSTRLAB_SESSION_SECRET=$(openssl rand -hex 32)
 NOSTRLAB_ADMIN_PUBKEY=npub...
 NOSTRLAB_METRICS_TOKEN=$(openssl rand -hex 32)
 NOSTRLAB_ERROR_WEBHOOK_URL=https://...
+NOSTRLAB_ERROR_LOG_PATH=
 NOSTRLAB_APP_NSEC=nsec...
 NEXT_PUBLIC_NOSTRLAB_APP_PUBKEY=<hex pubkey>
 LIGHTNING_MODE=lnurl
@@ -54,6 +55,14 @@ NOSTRLAB_RELAY_RSVP_INGEST_CONCURRENCY=8
 ENABLE_PAYMENT_RECONCILER=true
 PAYMENT_RECONCILE_INTERVAL_MS=30000
 PAYMENT_RECONCILE_BATCH_SIZE=100
+ENABLE_NOTIFICATION_DELIVERY=true
+NOSTRLAB_NOTIFICATION_CHANNELS=nostr_dm
+NOSTRLAB_NOTIFICATION_WEBHOOK_URL=
+NOTIFICATION_DELIVERY_INTERVAL_MS=30000
+NOTIFICATION_DELIVERY_BATCH_SIZE=50
+ENABLE_EVENT_ALERTS=true
+EVENT_ALERT_INTERVAL_MS=300000
+EVENT_ALERT_BATCH_SIZE=100
 ```
 
 Increase `NOSTRLAB_RELAY_RSVP_COORD_LIMIT` only after checking `/api/ops/metrics`.
@@ -139,13 +148,16 @@ secret hash, payment hash, and preimage before marking the ticket checked in.
 - `/api/ready` should be your deployment readiness check; it fails when DB, Redis, or required production env is not ready.
 - `/api/ops/metrics` is bearer-protected with `NOSTRLAB_METRICS_TOKEN`.
 - Server logs are JSON lines with `service`, `event`, `release`, and `runtimeRole`.
-- Unhandled server errors are posted to `NOSTRLAB_ERROR_WEBHOOK_URL`.
+- Unhandled server errors are posted to `NOSTRLAB_ERROR_WEBHOOK_URL` or appended to `NOSTRLAB_ERROR_LOG_PATH`.
+- Notification delivery and event-alert workers report status through `/api/ops/metrics`.
 
 Alert on:
 
 - `/api/ready` returning non-200.
 - pending payments increasing without matching paid payments.
 - payment reconciler failures or stale `lastRunAt`.
+- notification delivery failures or a growing pending delivery queue.
+- event alert scan failures or stale `lastRunAt`.
 - relay listener `failed` counters increasing.
 - Postgres slow queries and connection saturation.
 - Redis connection errors.

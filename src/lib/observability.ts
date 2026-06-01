@@ -1,3 +1,6 @@
+import { appendFile, mkdir } from "node:fs/promises";
+import path from "node:path";
+
 type LogLevel = "debug" | "info" | "warn" | "error";
 
 const LEVEL_ORDER: Record<LogLevel, number> = {
@@ -45,6 +48,13 @@ function serializeError(error: unknown) {
   return { message: String(error) };
 }
 
+async function appendErrorLog(payload: unknown) {
+  const logPath = process.env.NOSTRLAB_ERROR_LOG_PATH?.trim();
+  if (!logPath) return;
+  await mkdir(path.dirname(logPath), { recursive: true });
+  await appendFile(logPath, `${JSON.stringify(payload)}\n`, "utf8");
+}
+
 export async function reportError(event: string, error: unknown, fields: Record<string, unknown> = {}) {
   const payload = {
     event,
@@ -55,6 +65,7 @@ export async function reportError(event: string, error: unknown, fields: Record<
     runtimeRole: process.env.NOSTRLAB_RUNTIME_ROLE ?? null,
   };
   log("error", event, { error: payload.error, ...fields });
+  await appendErrorLog(payload).catch(() => {});
 
   const webhook = process.env.NOSTRLAB_ERROR_WEBHOOK_URL;
   if (!webhook) return;

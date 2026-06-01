@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { SaveEventAlertButton } from "@/components/events/SaveEventAlertButton";
 
 const QUICK_TAGS = ["bitcoin", "nostr", "lightning", "workshop", "online"];
 const PRICE_OPTS = [
@@ -124,6 +125,7 @@ export function EventFilters() {
           >
             Subscribe
           </a>
+          <SaveEventAlertButton />
         </div>
       </div>
       {geoErr && <div className="text-xs text-danger">{geoErr}</div>}

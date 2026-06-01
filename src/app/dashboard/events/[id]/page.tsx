@@ -13,6 +13,7 @@ import { TicketTierManager } from "@/components/tickets/TicketTierManager";
 import { TicketRecoveryButton } from "@/components/tickets/TicketRecoveryButton";
 import { ticketTierToDTO } from "@/lib/dto";
 import { eventDeleteBlockedReason, type EventActivityCounts } from "@/lib/events/delete-policy";
+import { PrivateRsvpPayload } from "@/components/events/PrivateRsvpPayload";
 
 export const dynamic = "force-dynamic";
 
@@ -192,7 +193,13 @@ export default async function ManageEventPage({
                   <Badge tone={r.status === "GOING" ? "success" : r.status === "MAYBE" ? "accent" : "muted"} size="sm">
                     {r.status.toLowerCase().replace("_", " ")}
                   </Badge>
-                  {r.privatePayload && <Badge tone="muted" size="sm">private</Badge>}
+                  {r.privatePayload && (
+                    <PrivateRsvpPayload
+                      attendeePubkey={r.pubkey}
+                      organizerPubkey={event.organizerPubkey}
+                      privatePayload={r.privatePayload}
+                    />
+                  )}
                   {r.status === "WAITLIST" && event.paymentMode === "FREE" && (
                     <WaitlistPromoteButton eventId={event.id} pubkey={r.pubkey} />
                   )}

@@ -3,6 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { listenerStats } from "@/lib/nostr/relay-listener";
 import { relayPoolStats } from "@/lib/nostr/relay-pool";
 import { paymentReconcilerStats } from "@/lib/payments/reconcile-worker";
+import { notificationDeliveryMetrics } from "@/lib/communications/notification-delivery";
+import { notificationDeliveryWorkerStats } from "@/lib/communications/notification-delivery-worker";
+import { savedEventSearchMetrics } from "@/lib/discovery/event-alerts";
+import { eventAlertWorkerStats } from "@/lib/discovery/event-alert-worker";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +34,9 @@ export async function GET(req: Request) {
     issuedTickets24h,
     checkIns24h,
     unreadNotifications,
+    privateRsvps,
+    notificationDeliveries,
+    savedSearches,
   ] = await Promise.all([
     prisma.user.count(),
     prisma.event.count({ where: { status: "ACTIVE", duplicateOfId: null } }),
@@ -40,6 +47,9 @@ export async function GET(req: Request) {
     prisma.ticket.count({ where: { createdAt: { gte: since24h } } }),
     prisma.checkIn.count({ where: { scannedAt: { gte: since24h } } }),
     prisma.notification.count({ where: { readAt: null } }),
+    prisma.rsvp.count({ where: { privatePayload: { not: null } } }),
+    notificationDeliveryMetrics(),
+    savedEventSearchMetrics(),
   ]);
 
   return NextResponse.json(
@@ -58,6 +68,15 @@ export async function GET(req: Request) {
         issuedTickets24h,
         checkIns24h,
         unreadNotifications,
+        privateRsvps,
+      },
+      notificationDelivery: {
+        deliveries: notificationDeliveries,
+        worker: notificationDeliveryWorkerStats(),
+      },
+      eventAlerts: {
+        ...savedSearches,
+        worker: eventAlertWorkerStats(),
       },
       relayListener: listenerStats(),
       relayPublisher: relayPoolStats(),

@@ -32,13 +32,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   let createdAt: number;
   let expectedCoordinate: string | null = null;
   let privatePayload: string | null = null;
+  let privateEncryptedRecipient: string | null = null;
 
   const privateParsed = privateRsvpCreateSchema.safeParse(body);
   if (privateParsed.success) {
+    const encryptedPayload = privateParsed.data.encryptedPayload;
+    privateEncryptedRecipient = encryptedPayload?.recipientPubkey.toLowerCase() ?? null;
     const payload = {
       eventId: id,
       status: privateParsed.data.status,
       private: true,
+      ...(encryptedPayload ? { encryptedPayload } : {}),
     };
     const authEvent = authEventForRequest(req, privateParsed.data.signedAuthEvent);
     if (!authEvent) return NextResponse.json({ error: "missing auth event" }, { status: 401 });
@@ -56,7 +60,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     nostrId = authEvent.id;
     rawEvent = authEvent as unknown as Prisma.InputJsonValue;
     createdAt = authEvent.created_at;
-    privatePayload = JSON.stringify({ private: true, status: privateParsed.data.status });
+    privatePayload = JSON.stringify({
+      private: true,
+      status: privateParsed.data.status,
+      encryptedPayload: encryptedPayload ?? null,
+      createdAt: authEvent.created_at,
+    });
   } else {
     const parsed = rsvpCreateSchema.safeParse(body);
     if (!parsed.success) {
@@ -89,6 +98,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!event) return NextResponse.json({ error: "event not found" }, { status: 404 });
   if (event.status === "CANCELLED") {
     return NextResponse.json({ error: "event is cancelled" }, { status: 409 });
+  }
+  if (privateEncryptedRecipient && privateEncryptedRecipient !== event.organizerPubkey.toLowerCase()) {
+    return NextResponse.json({ error: "private RSVP must be encrypted to the event organizer" }, { status: 400 });
   }
 
   // Verify the RSVP's `a` tag points at THIS event.

@@ -16,7 +16,15 @@ interface DashboardData {
   upcoming: EventListItemDTO[];
   past: EventListItemDTO[];
   attending: EventListItemDTO[];
+  recommendations: EventListItemDTO[];
   followedCommunities: CommunityDTO[];
+  savedAlerts: {
+    id: string;
+    name: string;
+    href: string;
+    createdAt: string;
+    lastNotifiedAt: string | null;
+  }[];
   notifications: {
     id: string;
     type: string;
@@ -94,6 +102,14 @@ export default function DashboardPage() {
   }
 
   const totalGoing = data.upcoming.reduce((s, e) => s + e.rsvpCount, 0);
+
+  async function deleteAlert(id: string) {
+    const res = await fetch(`/api/event-alerts/${id}`, { method: "DELETE" });
+    if (!res.ok) return;
+    setData((current) => current
+      ? { ...current, savedAlerts: current.savedAlerts.filter((alert) => alert.id !== id) }
+      : current);
+  }
 
   return (
     <div className="max-w-6xl mx-auto px-5 py-10 space-y-10">
@@ -175,6 +191,14 @@ export default function DashboardPage() {
         </Section>
       )}
 
+      {data.recommendations.length > 0 && (
+        <Section title="Recommended" hint={`${data.recommendations.length} matches`}>
+          <div className="rounded-2xl bg-surface border border-border shadow-soft p-2 space-y-1">
+            {data.recommendations.map((e) => <EventListingRow key={e.id} event={e} />)}
+          </div>
+        </Section>
+      )}
+
       <Section title="Going to" hint={`${data.attending.length} RSVPs`}>
         {data.attending.length === 0 ? (
           <Empty title="No RSVPs yet" hint="Browse the discover feed and RSVP to events you want to attend." />
@@ -194,6 +218,30 @@ export default function DashboardPage() {
                 <div className="text-sm text-muted mt-1 line-clamp-2">{c.description}</div>
                 <div className="text-xs text-muted mt-3">{c.upcomingCount} upcoming · {c.followerCount} following</div>
               </Link>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {data.savedAlerts.length > 0 && (
+        <Section title="Event alerts" hint={`${data.savedAlerts.length} saved`}>
+          <div className="rounded-2xl bg-surface border border-border shadow-soft divide-y divide-border">
+            {data.savedAlerts.map((alert) => (
+              <div key={alert.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                <Link href={alert.href} className="min-w-0 flex-1 hover:text-accent">
+                  <div className="truncate text-sm font-medium">{alert.name}</div>
+                  <div className="mt-0.5 text-xs text-muted">
+                    {alert.lastNotifiedAt ? "Checked" : "Waiting for first scan"}
+                  </div>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => deleteAlert(alert.id)}
+                  className="h-8 rounded-full border border-border px-3 text-xs font-medium text-muted hover:text-danger"
+                >
+                  Delete
+                </button>
+              </div>
             ))}
           </div>
         </Section>

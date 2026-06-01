@@ -62,6 +62,19 @@ function isValidNsec(raw: string): boolean {
   }
 }
 
+function enabledNotificationChannels(env: NodeJS.ProcessEnv): string[] {
+  if (value(env, "ENABLE_NOTIFICATION_DELIVERY") !== "true") return [];
+  const raw = value(env, "NOSTRLAB_NOTIFICATION_CHANNELS");
+  return (raw || "nostr_dm")
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function isValidNotificationChannel(channel: string): boolean {
+  return channel === "nostr_dm" || channel === "nostr" || channel === "dm" || channel === "webhook";
+}
+
 function hasCompleteObjectStorage(env: NodeJS.ProcessEnv): boolean {
   return [
     "OBJECT_STORAGE_BUCKET",
@@ -234,11 +247,16 @@ export function productionReadinessChecks(
   ));
 
   const errorWebhook = parseUrl(value(env, "NOSTRLAB_ERROR_WEBHOOK_URL"));
+  const errorLogPath = value(env, "NOSTRLAB_ERROR_LOG_PATH");
   checks.push(check(
     "error monitoring",
-    !!errorWebhook && errorWebhook.protocol === "https:",
+    (!!errorWebhook && errorWebhook.protocol === "https:") || !!errorLogPath,
     "error",
-    "set NOSTRLAB_ERROR_WEBHOOK_URL to forward unhandled server errors to monitoring"
+    errorWebhook && errorWebhook.protocol === "https:"
+      ? "server errors are forwarded to monitoring webhook"
+      : errorLogPath
+        ? "server errors are appended to NOSTRLAB_ERROR_LOG_PATH"
+        : "set NOSTRLAB_ERROR_WEBHOOK_URL or NOSTRLAB_ERROR_LOG_PATH for unhandled server errors"
   ));
 
   checks.push(check(
@@ -277,6 +295,18 @@ export function productionReadinessChecks(
       "error",
       "enable payment reconciler only on worker nodes"
     ));
+    checks.push(check(
+      "ENABLE_NOTIFICATION_DELIVERY",
+      value(env, "ENABLE_NOTIFICATION_DELIVERY") !== "true" || runtimeRole === "worker",
+      "error",
+      "enable notification delivery only on worker nodes"
+    ));
+    checks.push(check(
+      "ENABLE_EVENT_ALERTS",
+      value(env, "ENABLE_EVENT_ALERTS") !== "true" || runtimeRole === "worker",
+      "error",
+      "enable event alert scans only on worker nodes"
+    ));
   } else {
     checks.push(check(
       "NOSTRLAB_RUNTIME_ROLE",
@@ -284,6 +314,36 @@ export function productionReadinessChecks(
       "error",
       "set NOSTRLAB_RUNTIME_ROLE=web or worker so deploy checks can catch duplicate relay listeners"
     ));
+  }
+
+  const notificationChannels = enabledNotificationChannels(env);
+  if (notificationChannels.length > 0) {
+    const invalidChannels = notificationChannels.filter((channel) => !isValidNotificationChannel(channel));
+    checks.push(check(
+      "NOSTRLAB_NOTIFICATION_CHANNELS",
+      invalidChannels.length === 0,
+      "error",
+      invalidChannels.length === 0
+        ? `notification channels: ${notificationChannels.join(", ")}`
+        : `unsupported notification channels: ${invalidChannels.join(", ")}`
+    ));
+    if (notificationChannels.some((channel) => channel === "nostr_dm" || channel === "nostr" || channel === "dm")) {
+      checks.push(check(
+        "notification DM key",
+        isValidNsec(value(env, "NOSTRLAB_APP_NSEC")),
+        "error",
+        "Nostr DM notification delivery requires NOSTRLAB_APP_NSEC"
+      ));
+    }
+    if (notificationChannels.includes("webhook")) {
+      const notificationWebhook = parseUrl(value(env, "NOSTRLAB_NOTIFICATION_WEBHOOK_URL"));
+      checks.push(check(
+        "NOSTRLAB_NOTIFICATION_WEBHOOK_URL",
+        !!notificationWebhook && notificationWebhook.protocol === "https:",
+        "error",
+        "webhook notification delivery requires an HTTPS NOSTRLAB_NOTIFICATION_WEBHOOK_URL"
+      ));
+    }
   }
 
   return checks;

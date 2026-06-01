@@ -44,6 +44,7 @@ model User {
   comments      EventComment[]
   announcements EventAnnouncement[]
   notifications Notification[]       @relation("NotificationRecipient")
+  savedEventSearches SavedEventSearch[]
 
   @@index([nip05])
   @@index([lud16])
@@ -464,6 +465,19 @@ enum NotificationType {
   TICKET_TRANSFER
   TICKET_ISSUED
   WAITLIST
+  DISCOVERY_ALERT
+}
+
+enum NotificationDeliveryChannel {
+  NOSTR_DM
+  WEBHOOK
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
 }
 
 model Notification {
@@ -480,9 +494,56 @@ model Notification {
 
   recipient User   @relation("NotificationRecipient", fields: [recipientPubkey], references: [pubkey], onDelete: Cascade)
   event     Event? @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  deliveries NotificationDelivery[]
 
   @@index([recipientPubkey, readAt, createdAt])
   @@index([eventId])
+}
+
+model NotificationDelivery {
+  id              String                     @id @default(cuid())
+  notificationId  String
+  recipientPubkey String
+  channel         NotificationDeliveryChannel
+  status          NotificationDeliveryStatus @default(PENDING)
+  attempts        Int                        @default(0)
+  nextAttemptAt   DateTime                   @default(now())
+  sentAt          DateTime?
+  lastError       String?                    @db.Text
+  providerRef     String?
+  payload         Json?
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, channel])
+  @@index([status, nextAttemptAt])
+  @@index([recipientPubkey, status])
+  @@index([channel, status])
+}
+
+model SavedEventSearch {
+  id             String   @id @default(cuid())
+  pubkey         String
+  name           String
+  query          String?
+  city           String?
+  tag            String?
+  category       String?
+  mode           String?
+  paid           String?
+  lat            Float?
+  lng            Float?
+  radiusKm       Int?
+  lastNotifiedAt DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [pubkey], references: [pubkey], onDelete: Cascade)
+
+  @@index([pubkey, createdAt])
+  @@index([lastNotifiedAt])
 }
 
 // -----------------------------------------------------------------------------
